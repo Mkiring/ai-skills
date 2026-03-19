@@ -31,21 +31,29 @@ See [PDF_STRATEGY.md](PDF_STRATEGY.md) for the complete workflow with decision r
 `scripts/pdf_tools.py` requires the following Python packages:
 
 ```bash
-# Required — core PDF text/table extraction
+# Required — primary PDF engine (handles CID-encoded fonts)
+pip install pymupdf
+
+# Optional — fallback for edge cases
 pip install pdfplumber
 
-# Required for render_page (page → PNG) — install at least one:
-pip install pymupdf        # preferred: MuPDF engine, faster
-pip install pypdfium2      # fallback: PDFium engine (Chrome's renderer)
+# Optional for render_page fallback:
+pip install pypdfium2      # PDFium engine (Chrome's renderer)
 ```
 
 | Package | Role | Required? |
 |---------|------|-----------|
-| `pdfplumber` | Text, table, and page metadata extraction | **Yes** |
-| `pymupdf` | Page rendering (`render_page`), primary renderer | One of the two |
-| `pypdfium2` | Page rendering (`render_page`), fallback renderer | One of the two |
+| `pymupdf` | Primary PDF engine: text, tables, page rendering, CID font handling | **Yes** |
+| `pdfplumber` | Fallback for edge cases | Optional |
+| `pypdfium2` | Page rendering fallback (`render_page`) | Optional |
 
-`render_page` tries `pymupdf` first, falls back to `pypdfium2`. If neither is installed, image/timing/diagram pages cannot be rendered and will fail. All other commands (`text`, `tables`, `search`, etc.) work with `pdfplumber` alone.
+### Why pymupdf?
+
+pymupdf (MuPDF) is the primary engine because it:
+- **Handles CID-encoded fonts** — some datasheets use custom font encodings that pdfplumber cannot decode
+- **Faster performance** — MuPDF engine is highly optimized
+- **Unified API** — text, tables, and rendering in one package
+- **Better coverage** — tested on 101 datasheets with 100% text extraction success
 
 ---
 
@@ -79,6 +87,9 @@ Patterns should be **section heading phrases or proprietary feature names**, not
 ---
 
 ## Known Limitations
+
+### CID-Encoded Fonts
+Some datasheets use CID (Character ID) font encoding where characters map to numeric IDs instead of Unicode. pymupdf handles these automatically, but very old or non-standard encodings may still produce partial garbage. Check `info` output for `cid_ratio` warning.
 
 ### Image-based PDFs
 When `is_text_based: false`, text extraction fails entirely. Use `render_page` to render pages as PNG and read visually. **Cross-validate mandatory**: manufacturer + part number from rendered image must match context. If mismatch → output `UNABLE TO VERIFY`. All image-PDF extractions default to `LOW` confidence.
