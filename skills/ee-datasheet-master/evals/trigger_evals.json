@@ -1,0 +1,82 @@
+[
+  {
+    "query": "I have the BQ25895RTWR datasheet PDF here. What's the VINDPM range and how do I calculate the input current limit with the ILIM resistor?",
+    "should_trigger": true
+  },
+  {
+    "query": "attached is the ES8316 audio codec spec sheet — need the ADC and DAC SNR values, and the supported sample rates for I2S",
+    "should_trigger": true
+  },
+  {
+    "query": "帮我看一下这个芯片规格书，我需要知道供电电压范围和工作温度，PDF已上传",
+    "should_trigger": true
+  },
+  {
+    "query": "STM32F103C8T6 datasheet is open. what's the max clock speed and flash/RAM for the C8T6 variant? also confirm the VDD min/max",
+    "should_trigger": true
+  },
+  {
+    "query": "I'm reading the W25Q128 spec sheet and confused about the QE bit and HOLD# pin behavior in quad mode — can you find the relevant section?",
+    "should_trigger": true
+  },
+  {
+    "query": "need feedback voltage and output voltage formula for TPS54331 DC-DC. have the datasheet, just point me to the resistor divider section",
+    "should_trigger": true
+  },
+  {
+    "query": "this I2C expander datasheet says address is '0100 A2 A1 A0' — is that 7-bit or 8-bit format? what are the actual valid addresses?",
+    "should_trigger": true
+  },
+  {
+    "query": "请帮我从这个CH340C的数据手册中找到晶振频率要求和USB数据线的端接电阻",
+    "should_trigger": true
+  },
+  {
+    "query": "I've got a 67-page spec sheet for a battery charger IC. need to find the charging state machine diagram and the precharge current register",
+    "should_trigger": true
+  },
+  {
+    "query": "looking at an LDO datasheet, what's the difference between 'absolute maximum ratings' and 'recommended operating conditions'? which one do I use for design?",
+    "should_trigger": true
+  },
+  {
+    "query": "how do I merge two PDFs into a single file?",
+    "should_trigger": false
+  },
+  {
+    "query": "write a Python script to communicate with a BMP280 temperature sensor over I2C using smbus2",
+    "should_trigger": false
+  },
+  {
+    "query": "explain the difference between I2C fast mode and fast mode plus — is 1MHz supported on all microcontrollers?",
+    "should_trigger": false
+  },
+  {
+    "query": "I need to extract all text from a 200-page engineering report PDF and save it as a searchable text file",
+    "should_trigger": false
+  },
+  {
+    "query": "help me choose between ESP32-S3 and RP2040 for a BLE data logger project — I care about power consumption and available RAM",
+    "should_trigger": false
+  },
+  {
+    "query": "can you summarize the WiFi driver architecture chapter from this ESP32 technical reference manual? just need the high-level picture",
+    "should_trigger": false
+  },
+  {
+    "query": "my 3.3V LDO is getting hot — how do I calculate power dissipation and do I need a heatsink?",
+    "should_trigger": false
+  },
+  {
+    "query": "convert this PDF datasheet to a Word document so I can edit the tables",
+    "should_trigger": false
+  },
+  {
+    "query": "what pull-up resistor value should I use for I2C at 400kHz? I've seen 2.2k and 4.7k recommended online",
+    "should_trigger": false
+  },
+  {
+    "query": "how many pages does this PDF have and what's the file size?",
+    "should_trigger": false
+  }
+]
