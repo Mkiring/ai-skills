@@ -1,0 +1,180 @@
+{
+  "skill_name": "schematic-analyzer",
+  "project_path": "data/E1005_v01",
+  "evals": [
+    {
+      "id": 1,
+      "name": "microsd-interface-mode",
+      "prompt": "data/E1005_v01 项目中，MicroSD卡槽使用的是什么接口模式？是SDIO还是SPI？请给出判断依据。",
+      "expected_output": "SPI模式。片选信号为GPIO8。MicroSD卡槽物理上支持SDIO，但D1/D2/D3数据线未连接到ESP32-S3控制器（只连接到ESD保护器件），只有D0(MOSI)、CLK、CMD(CS/GPIO8)连到控制器，因此实际工作在SPI模式。",
+      "assertions": [
+        {
+          "id": "spi_mode_identified",
+          "description": "Answer identifies SPI as the actual interface mode",
+          "type": "contains_keyword",
+          "keywords": ["SPI"]
+        },
+        {
+          "id": "not_sdio",
+          "description": "Answer does NOT conclude the interface is SDIO or 4-bit mode",
+          "type": "not_contains",
+          "keywords": ["SDIO模式", "4-bit", "四线"]
+        },
+        {
+          "id": "cs_gpio8",
+          "description": "Answer mentions GPIO8 as chip select signal",
+          "type": "contains_keyword",
+          "keywords": ["GPIO8", "gpio8"]
+        },
+        {
+          "id": "evidence_unconnected_data_lines",
+          "description": "Answer mentions that D1/D2/D3 or some data lines are not connected to the MCU",
+          "type": "contains_any",
+          "keywords": ["D1", "D2", "D3", "未连接", "只连", "ESD", "被动"]
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "bq27220-power-domain",
+      "prompt": "data/E1005_v01 项目中，U5 BQ27220的供电来自哪里？它的VDD引脚连到什么网络？VDD_3V3和BQ27220有什么关系？",
+      "expected_output": "BQ27220是库仑计，由VBAT（约4V电池电压）供电，通过REGIN引脚输入。VDD引脚由BQ27220内部LDO从VBAT生成1.8V，不连接外部电源网络。电流采样通过SRN和SRP引脚完成。VDD_3V3与BQ27220没有连接关系。",
+      "assertions": [
+        {
+          "id": "vbat_supply",
+          "description": "Answer identifies VBAT as the supply source for BQ27220",
+          "type": "contains_keyword",
+          "keywords": ["VBAT", "vbat", "电池"]
+        },
+        {
+          "id": "internal_ldo",
+          "description": "Answer mentions internal LDO or 1.8V output",
+          "type": "contains_any",
+          "keywords": ["内部LDO", "internal LDO", "1.8V", "1.8v"]
+        },
+        {
+          "id": "not_vdd_3v3",
+          "description": "Answer does NOT say VDD_3V3 powers BQ27220",
+          "type": "not_contains",
+          "keywords": ["VDD_3V3供电", "3.3V供电", "由VDD_3V3"]
+        },
+        {
+          "id": "srn_srp_sampling",
+          "description": "Answer mentions SRN/SRP pins for current sampling",
+          "type": "contains_any",
+          "keywords": ["SRN", "SRP", "电流采样", "采样"]
+        },
+        {
+          "id": "vdd_3v3_unrelated",
+          "description": "Answer states VDD_3V3 has no connection to BQ27220",
+          "type": "contains_any",
+          "keywords": ["无关", "没有连接", "不连接", "无连接"]
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "i2c-bus-devices",
+      "prompt": "data/E1005_v01 项目中，I2C总线上挂载了哪些器件？各自的I2C地址是什么？有没有设计问题？",
+      "expected_output": "I2C总线共5个器件：U5 BQ27220(0x55)、U6 SHT40-AD1B-R2(0x44)、U14 PCF8563M/TR(0x51)、U15 LSM6DS3TR-C(0x6A)、U16 SHT40-AD1B-R2(0x44)。设计问题：U6和U16均为SHT40-AD1B-R2，I2C地址均为0x44，存在地址冲突。",
+      "assertions": [
+        {
+          "id": "all_5_devices",
+          "description": "Answer lists all 5 I2C devices (U5, U6, U14, U15, U16)",
+          "type": "contains_all",
+          "keywords": ["U5", "U6", "U14", "U15", "U16"]
+        },
+        {
+          "id": "correct_addresses",
+          "description": "Answer includes correct I2C addresses",
+          "type": "contains_all",
+          "keywords": ["0x55", "0x44", "0x51", "0x6A"]
+        },
+        {
+          "id": "address_conflict_flagged",
+          "description": "Answer flags the address conflict between U6 and U16",
+          "type": "contains_any",
+          "keywords": ["冲突", "conflict", "重复", "相同地址", "0x44"]
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "name": "i2c-address-conflict",
+      "prompt": "data/E1005_v01 项目中，请审查I2C总线设计，有没有潜在的设计问题？",
+      "expected_output": "U6和U16都是SHT40-AD1B-R2温湿度传感器，I2C地址均固定为0x44，两个器件挂在同一I2C总线上会产生地址冲突，无法独立寻址，这是一个设计缺陷。",
+      "assertions": [
+        {
+          "id": "identifies_conflicting_refs",
+          "description": "Answer identifies both U6 and U16 as the conflicting devices",
+          "type": "contains_all",
+          "keywords": ["U6", "U16"]
+        },
+        {
+          "id": "states_same_address",
+          "description": "Answer states the conflicting address is 0x44",
+          "type": "contains_keyword",
+          "keywords": ["0x44"]
+        },
+        {
+          "id": "identified_as_design_issue",
+          "description": "Answer characterizes this as a design problem/conflict",
+          "type": "contains_any",
+          "keywords": ["冲突", "问题", "缺陷", "conflict", "无法", "不能"]
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "name": "spi-bus-topology",
+      "prompt": "data/E1005_v01 项目中，有几组SPI总线？每组分别连接了哪些器件？片选信号是什么？",
+      "expected_output": "两组SPI总线：(1) QSPI总线接256Mb SPI Flash，U9和U17是同一Flash的不同封装备选，只装其中一个；(2) 普通SPI总线接SD card（片选GPIO8）和E-paper（片选GPIO15）。",
+      "assertions": [
+        {
+          "id": "two_spi_buses",
+          "description": "Answer identifies two separate SPI buses",
+          "type": "contains_any",
+          "keywords": ["两组", "两路", "2组", "两个SPI", "QSPI"]
+        },
+        {
+          "id": "qspi_flash_u9_u17",
+          "description": "Answer mentions U9 and U17 as alternate Flash options on QSPI",
+          "type": "contains_all",
+          "keywords": ["U9", "U17"]
+        },
+        {
+          "id": "sdcard_cs_gpio8",
+          "description": "Answer identifies SD card chip select as GPIO8",
+          "type": "contains_all",
+          "keywords": ["GPIO8", "SD"]
+        },
+        {
+          "id": "epaper_cs_gpio15",
+          "description": "Answer identifies E-paper chip select as GPIO15",
+          "type": "contains_all",
+          "keywords": ["GPIO15", "paper", "Paper"]
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "name": "epaper-interface-unidirectional",
+      "prompt": "data/E1005_v01 项目中，E-paper显示屏的SPI接口有什么特别的地方？",
+      "expected_output": "E-paper的SPI接口是单向的（只有上行信号），没有MISO信号线，ESP32-S3无法从E-paper读取数据。片选信号为GPIO15。这是E-paper显示屏的典型设计，只需写入显示数据，不需要读取。",
+      "assertions": [
+        {
+          "id": "write_only_identified",
+          "description": "Answer identifies E-paper SPI as write-only / unidirectional / no MISO",
+          "type": "contains_any",
+          "keywords": ["单向", "只有上行", "没有MISO", "无MISO", "write-only", "只写"]
+        },
+        {
+          "id": "cs_gpio15",
+          "description": "Answer mentions GPIO15 as the chip select",
+          "type": "contains_keyword",
+          "keywords": ["GPIO15"]
+        }
+      ]
+    }
+  ]
+}

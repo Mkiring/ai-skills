@@ -1,0 +1,133 @@
+"""Project scope resolution for KiCad schematics."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+
+from .kicad.schematic_parser import SchematicParser
+
+
+@dataclass(frozen=True)
+class ProjectScope:
+    """Resolved project scope for one input path."""
+
+    root_schematic: Path
+    project_name: str
+    referenced_sheets: list[Path]
+    is_hierarchical: bool
+    scope_type: str
+
+
+class ScopeResolver:
+    """Resolve root schematic and analysis scope deterministically."""
+
+    @classmethod
+    def resolve(cls, path: str | Path) -> ProjectScope:
+        input_path = Path(path).resolve()
+        root_schematic, scope_type = cls._resolve_root_schematic(input_path)
+        project_name = cls._resolve_project_name(input_path, root_schematic)
+        referenced_sheets = cls._collect_referenced_sheets(root_schematic)
+
+        return ProjectScope(
+            root_schematic=root_schematic,
+            project_name=project_name,
+            referenced_sheets=referenced_sheets,
+            is_hierarchical=bool(referenced_sheets),
+            scope_type=scope_type,
+        )
+
+    @classmethod
+    def find_schematic(cls, path: str | Path) -> Path:
+        """Compatibility wrapper returning the resolved root schematic."""
+        root_schematic, _scope_type = cls._resolve_root_schematic(Path(path).resolve())
+        return root_schematic
+
+    @classmethod
+    def _resolve_root_schematic(cls, input_path: Path) -> tuple[Path, str]:
+        if input_path.is_file():
+            if input_path.suffix == ".kicad_sch":
+                return input_path.resolve(), cls._scope_type_for_schematic(input_path.resolve())
+            if input_path.suffix == ".kicad_pro":
+                project_schematic = input_path.with_suffix(".kicad_sch")
+                if project_schematic.exists():
+                    return project_schematic.resolve(), "directory"
+                return cls._resolve_root_schematic(input_path.parent.resolve())
+            raise ValueError(f"Not a KiCad schematic: {input_path}")
+
+        if input_path.is_dir():
+            schematics = sorted(candidate.resolve() for candidate in input_path.glob("*.kicad_sch"))
+            if not schematics:
+                raise FileNotFoundError(f"No .kicad_sch files in: {input_path}")
+
+            project_files = sorted(input_path.glob("*.kicad_pro"))
+            if len(project_files) == 1:
+                project_schematic = input_path / f"{project_files[0].stem}.kicad_sch"
+                if project_schematic.exists():
+                    return project_schematic.resolve(), "directory"
+
+            hierarchical_roots: list[tuple[int, int, Path]] = []
+            for schematic in schematics:
+                content = schematic.read_text(encoding="utf-8", errors="ignore")
+                sheet_instances = content.count("(sheet_instances")
+                sheet_count = content.count("(sheet\n") + content.count("(sheet\r\n")
+                if sheet_instances:
+                    hierarchical_roots.append((sheet_instances, sheet_count, schematic))
+
+            if hierarchical_roots:
+                hierarchical_roots.sort(key=lambda item: (item[0], item[1], item[2].name))
+                return hierarchical_roots[-1][2], "directory"
+
+            schematics_by_sheet_count: list[tuple[int, Path]] = []
+            for schematic in schematics:
+                content = schematic.read_text(encoding="utf-8", errors="ignore")
+                schematics_by_sheet_count.append(
+                    (content.count("(sheet\n") + content.count("(sheet\r\n"), schematic)
+                )
+            schematics_by_sheet_count.sort(key=lambda item: (item[0], item[1].name))
+            if schematics_by_sheet_count[-1][0] > 0:
+                return schematics_by_sheet_count[-1][1], "directory"
+
+            return schematics[0], "directory"
+
+        raise FileNotFoundError(f"Path not found: {input_path}")
+
+    @classmethod
+    def _resolve_project_name(cls, input_path: Path, root_schematic: Path) -> str:
+        if input_path.is_file() and input_path.suffix == ".kicad_pro":
+            return input_path.stem
+
+        project_files = sorted(root_schematic.parent.glob("*.kicad_pro"))
+        if len(project_files) == 1:
+            return project_files[0].stem
+
+        return root_schematic.stem
+
+    @classmethod
+    def _collect_referenced_sheets(cls, root_schematic: Path) -> list[Path]:
+        referenced: list[Path] = []
+        seen: set[Path] = set()
+
+        def visit(schematic_file: Path, active_files: set[Path]) -> None:
+            parser = SchematicParser(str(schematic_file), include_child_sheets=False)
+            for sheet in parser.get_sheets():
+                sheet_file = sheet.get("file", "")
+                if not sheet_file:
+                    continue
+                child_path = (schematic_file.parent / sheet_file).resolve()
+                if not child_path.exists():
+                    continue
+                if child_path not in seen:
+                    referenced.append(child_path)
+                    seen.add(child_path)
+                if child_path in active_files:
+                    continue
+                visit(child_path, active_files | {child_path})
+
+        visit(root_schematic.resolve(), {root_schematic.resolve()})
+        return referenced
+
+    @classmethod
+    def _scope_type_for_schematic(cls, schematic_path: Path) -> str:
+        parser = SchematicParser(str(schematic_path), include_child_sheets=False)
+        return "hierarchy" if parser.get_sheets() else "flat"

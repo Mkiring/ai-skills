@@ -1,0 +1,54 @@
+name: USB
+category: bus
+description: "USB interface"
+
+signals:
+  - role: dp
+    patterns:
+      - "(?i)^/?USB.*DP"
+      - "(?i)^/?D[+-]$"
+      - "(?i)^/?USBD[+-]$"
+      - "(?i)^/?USB_DM"
+    required: true
+    group_key: true
+
+  - role: dm
+    patterns:
+      - "(?i)^/?USB.*DM"
+      - "(?i)^/?D[-+]$"
+      - "(?i)^/?USBD[-+]$"
+      - "(?i)^/?USB_DP"
+    required: true
+    group_key: true
+
+  - role: cc1
+    patterns:
+      - "(?i)^/?CC1$"
+      - "(?i)^/?USB.*CC1"
+    required: false
+    group_key: false
+
+  - role: cc2
+    patterns:
+      - "(?i)^/?CC2$"
+      - "(?i)^/?USB.*CC2"
+    required: false
+    group_key: false
+
+controller:
+  detect_by: core_component
+
+participants:
+  filter:
+    - reference_prefix: ["R", "C", "L", "D", "TP", "FB"]
+  exclude_controller: true
+
+extra_fields:
+  usb_version:
+    type: string
+    source: infer
+    description: "USB version (2.0/3.0/3.1/3.2)"
+  type_c:
+    type: boolean
+    source: infer
+    description: "USB Type-C support"
