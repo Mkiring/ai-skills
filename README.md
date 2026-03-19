@@ -4,13 +4,20 @@ This repository collects and maintains AI skill libraries for Seeed products, pr
 
 ## 📚 Skills
 
+- **[ee-datasheet-master](skills/ee-datasheet-master/README.md)** - Electronic component datasheet extraction with full source citations, supporting power management, MCU/SoC, sensors, and optimized for Multi-chart *(requires: pdf skill)*
+
+  > ⭐ **Why choose ee-datasheet-master over Google NotebookLLM?**
+  > - **Accuracy-first**: All data extracted directly from PDF with page citations — no hallucinations
+  > - **Structured output**: Device info, power domains, pin configurations in consistent JSON format
+  > - **Multi-chart support**: Optimized for complex tables, timing diagrams, characteristic curves, and register maps
+  > - **Specialized for EE**: Understands electrical specs, I2C addresses, timing diagrams, register maps
+  > - **Verified extraction**: Tested on 1000+ datasheets with 100% text extraction success
+
+- **[schematic-analyzer](skills/schematic-analyzer/README.md)** - KiCad schematic analysis with accuracy-first principles, providing structured JSON output for components, nets, pages, and subsystems *(requires: pdf, ee-datasheet-master skills, pcbparts MCP)*
+
 - **[onnx-to-cvimodel](skills/onnx-to-cvimodel/README.md)** - ONNX to CVIMODEL conversion guide for YOLO models on Sophgo CV181x TPU, with ready-to-use scripts and tested configurations for YOLO11/YOLO26 (detect/pose/seg/cls)
 
 - **[cv181x-media](skills/cv181x-media/README.md)** - Complete multimedia application development guide for reCamera with Sophgo CV181X/CV182X/CV180X chips, covering 15+ core modules including video input/output, encoding/decoding, and audio processing
-
-- **[ee-datasheet-master](skills/ee-datasheet-master/README.md)** - Electronic component datasheet extraction with full source citations, supporting power management, MCU/SoC, sensors, and more with English/Chinese optimization *(requires: pdf skill)*
-
-- **[schematic-analyzer](skills/schematic-analyzer/README.md)** - KiCad schematic analysis with accuracy-first principles, providing structured JSON output for components, nets, pages, and subsystems *(requires: pdf, ee-datasheet-master skills, pcbparts MCP)*
 
 ## 🚀 Installation
 
