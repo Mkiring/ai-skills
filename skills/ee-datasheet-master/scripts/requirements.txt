@@ -1,0 +1,11 @@
+# EE Datasheet Master Dependencies
+# Install: pip install -r requirements.txt
+
+# Required - Primary PDF engine (handles CID-encoded fonts)
+pymupdf>=1.23.0
+
+# Required - Fallback for edge cases
+pdfplumber>=0.10.0
+
+# Required - Page rendering fallback (render_page command)
+pypdfium2>=4.0.0

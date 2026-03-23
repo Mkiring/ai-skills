@@ -31,21 +31,14 @@ See [PDF_STRATEGY.md](PDF_STRATEGY.md) for the complete workflow with decision r
 `scripts/pdf_tools.py` requires the following Python packages:
 
 ```bash
-# Required — primary PDF engine (handles CID-encoded fonts)
-pip install pymupdf
-
-# Optional — fallback for edge cases
-pip install pdfplumber
-
-# Optional for render_page fallback:
-pip install pypdfium2      # PDFium engine (Chrome's renderer)
+pip install -r scripts/requirements.txt
 ```
 
 | Package | Role | Required? |
 |---------|------|-----------|
 | `pymupdf` | Primary PDF engine: text, tables, page rendering, CID font handling | **Yes** |
-| `pdfplumber` | Fallback for edge cases | Optional |
-| `pypdfium2` | Page rendering fallback (`render_page`) | Optional |
+| `pdfplumber` | Fallback for edge cases | **Yes** |
+| `pypdfium2` | Page rendering fallback (`render_page`) | **Yes** |
 
 ### Why pymupdf?
 

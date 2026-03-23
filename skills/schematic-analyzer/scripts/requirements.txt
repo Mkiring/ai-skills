@@ -1,0 +1,10 @@
+# Schematic Analyzer Dependencies
+# Install: pip install -r requirements.txt
+
+# Required - Pattern YAML loading for bus detection (I2C/SPI/UART/USB)
+pyyaml>=6.0
+
+# Required - Datasheet PDF parsing (via ee-datasheet-master skill)
+pymupdf>=1.23.0
+pdfplumber>=0.10.0
+pypdfium2>=4.0.0

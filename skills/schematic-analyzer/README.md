@@ -63,7 +63,8 @@ schematic-analyzer/
 ├── SKILL.md              # Skill definition (trigger, rules, CLI commands)
 ├── SCHEMATIC_STRATEGY.md # Reading strategy (workflows, principles)
 ├── scripts/              # CLI tools
-│   └── schematic-cli.py  # Main CLI entry point
+│   ├── schematic-cli.py  # Main CLI entry point
+│   └── requirements.txt  # Python dependencies
 ├── patterns/             # Pattern YAML examples (i2c, spi, uart, etc.)
 ├── evals/                # Evaluation test cases
 └── tests/                # Unit tests
@@ -88,6 +89,21 @@ schematic-analyzer/
 - **KiCad CLI** - Required for netlist export and connectivity analysis
   - Linux: `kicad-cli` (installed with KiCad)
   - Windows: `kicad-cli.exe` (add KiCad install directory to PATH)
+
+### Python Packages
+
+```bash
+pip install -r scripts/requirements.txt
+```
+
+| Package | Version | Required? | Purpose |
+|---------|---------|-----------|---------|
+| PyYAML | >=6.0 | **Yes** | Pattern YAML file loading for bus detection (I2C/SPI/UART/USB) |
+| pymupdf | >=1.23 | **Yes** | Datasheet PDF parsing (via ee-datasheet-master skill) |
+| pdfplumber | >=0.10 | **Yes** | Datasheet parsing fallback for edge cases |
+| pypdfium2 | >=4.0 | **Yes** | PDF page rendering fallback |
+
+All other dependencies use Python standard library modules (`re`, `pathlib`, `dataclasses`, `xml.etree.ElementTree`, `json`, `argparse`)
 
 ## Platform Support
 
