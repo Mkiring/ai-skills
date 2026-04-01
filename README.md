@@ -21,55 +21,30 @@ This repository collects and maintains AI skill libraries for Seeed products, pr
 
 ## 🚀 Installation
 
-### Claude
+This repository is a collection of independent skills under `skills/`.
 
-```bash
-# Install all skills
-claude skills install git+https://github.com/Seeed-Studio/ai-skills
+To use a skill from this repository:
 
-# Install individual skill
-claude skills install git+https://github.com/Seeed-Studio/ai-skills#subdirectory=skills/onnx-to-cvimodel
-claude skills install git+https://github.com/Seeed-Studio/ai-skills#subdirectory=skills/cv181x-media
-claude skills install git+https://github.com/Seeed-Studio/ai-skills#subdirectory=skills/ee-datasheet-master
-claude skills install git+https://github.com/Seeed-Studio/ai-skills#subdirectory=skills/schematic-analyzer
-```
+1. Open the target skill's `README.md`
+2. Follow that skill's dependency and environment setup
+3. Integrate the skill using the current workflow supported by your assistant tooling
 
-### Codex
+Important: using a skill is not just copying skill files. Many skills also require extra tools, Python packages, SDKs, Docker images, KiCad CLI, or MCP services. The dependency and environment setup must be completed from that skill's own `README.md` before use.
 
-```bash
-# Install all skills
-codex skills install git+https://github.com/Seeed-Studio/ai-skills
+### Skill-Specific Setup
 
-# Install individual skill
-codex skills install git+https://github.com/Seeed-Studio/ai-skills#subdirectory=skills/onnx-to-cvimodel
-codex skills install git+https://github.com/Seeed-Studio/ai-skills#subdirectory=skills/cv181x-media
-codex skills install git+https://github.com/Seeed-Studio/ai-skills#subdirectory=skills/ee-datasheet-master
-codex skills install git+https://github.com/Seeed-Studio/ai-skills#subdirectory=skills/schematic-analyzer
-```
+After installing a skill, open its README and complete its dependency setup before using it:
 
-### Skill Dependencies
+- **[onnx-to-cvimodel](skills/onnx-to-cvimodel/README.md)**: conversion scripts, Docker/TPU-MLIR environment, model assets
+- **[cv181x-media](skills/cv181x-media/README.md)**: skill usage and project-specific workflow
+- **[ee-datasheet-master](skills/ee-datasheet-master/README.md)**: Python dependencies for `scripts/pdf_tools.py`
+- **[schematic-analyzer](skills/schematic-analyzer/README.md)**: Python dependencies, KiCad CLI, `pcbparts` MCP, and `ee-datasheet-master` / `pdf` prerequisites
 
-Some skills depend on others. Install in this order if installing individually:
+Recommended install order when you need schematic analysis:
 
-1. **ee-datasheet-master** requires the built-in `pdf` skill
-2. **schematic-analyzer** requires:
-   - `pdf` and `ee-datasheet-master` skills
-   - `pcbparts` MCP server (required for component lookup)
-
-```bash
-# Install schematic-analyzer with dependencies
-claude skills install git+https://github.com/Seeed-Studio/ai-skills#subdirectory=skills/ee-datasheet-master
-claude skills install git+https://github.com/Seeed-Studio/ai-skills#subdirectory=skills/schematic-analyzer
-```
-
-**pcbparts MCP Setup:**
-
-The schematic-analyzer skill requires the pcbparts MCP server for component specifications lookup. Install and configure it before using schematic-analyzer:
-
-```bash
-# Install pcbparts MCP
-# See: https://pcbparts.dev/mcp
-```
+1. Install and verify the built-in `pdf` skill
+2. Install `ee-datasheet-master` and complete its Python dependency setup
+3. Install `schematic-analyzer` and complete its KiCad CLI / MCP setup
 
 ## 📖 How to Use
 
