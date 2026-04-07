@@ -1,24 +1,26 @@
 ---
 name: schematic-analyzer
 description: |
-  Use when analyzing KiCad schematics (.kicad_sch), identifying what a component or IC does,
-  tracing nets, buses, signal paths, or power distribution, extracting subsystem topology,
-  or reviewing hardware architecture for design review, BSP bring-up, or test planning.
-  Trigger on requests about I2C/SPI/UART/USB buses, power trees, signal flow, component roles,
-  root schematic selection in hierarchical designs, and Chinese terms such as 原理图分析,
-  拓扑提取, 器件角色, 信号流, 电源树.
+  Use when analyzing KiCad schematics (.kicad_sch) or Cadence OrCAD Capture XML exports (.xml),
+  identifying what a component or IC does, tracing nets, buses, signal paths, or power distribution,
+  extracting subsystem topology, or reviewing hardware architecture for design review, BSP bring-up,
+  or test planning. Trigger on requests about I2C/SPI/UART/USB buses, power trees, signal flow,
+  component roles, root schematic selection in hierarchical designs, Cadence OrCAD原理图, and
+  Chinese terms such as 原理图分析, 拓扑提取, 器件角色, 信号流, 电源树.
 
 compatibility:
   tools: [Read, Write, Glob, Grep, Bash]
-  dependencies: [python3, kicad-cli]
+  dependencies: [python3]
+  optional_dependencies: [kicad-cli]
   skills: [pdf, ee-datasheet-master]
   optional_mcp: [pcbparts]
 ---
 
 # Schematic Analyzer
 
-Analysis of KiCad schematics via CLI tools. Produces accurate answers—query what's needed
-for reliable conclusions, never dumps raw files, never guesses without grounding.
+Analysis of KiCad schematics and Cadence OrCAD Capture XML exports via CLI tools.
+Produces accurate answers—query what's needed for reliable conclusions, never dumps
+raw files, never guesses without grounding.
 
 ## Core Principle
 
@@ -134,7 +136,7 @@ When determining interface mode or device configuration:
 ### Don't: Dump Raw Files
 
 ```
-❌ Read the entire .kicad_sch file
+❌ Read the entire .kicad_sch or Cadence XML file
 ❌ Paste full netlist into context
 ❌ Export all JSON and load into prompt
 ```
@@ -185,7 +187,7 @@ When determining interface mode or device configuration:
 
 For entry mode selection, reading loop, and detailed workflow, see [SCHEMATIC_STRATEGY.md](./SCHEMATIC_STRATEGY.md).
 
-**Never**: Dump full `.kicad_sch` files, netlists, or exported JSON into context.
+**Never**: Dump full `.kicad_sch` files, Cadence XML files, netlists, or exported JSON into context.
 
 ---
 

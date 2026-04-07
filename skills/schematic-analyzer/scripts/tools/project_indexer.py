@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import re as _re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from .kicad.schematic_parser import SchematicParser
+from .parser_factory import get_schematic_parser
 from .scope_resolver import ProjectScope, ScopeResolver
 
 
@@ -116,7 +117,7 @@ class ProjectIndexer:
         sheet_name_to_path: dict[str, str] = {}
 
         for record in self._build_sheet_records(scope):
-            parser = SchematicParser(str(record.file_path), include_child_sheets=False)
+            parser = get_schematic_parser(str(record.file_path), include_child_sheets=False)
             local_components = parser.get_components()
             hierarchy.append(
                 SheetInfo(
@@ -157,6 +158,14 @@ class ProjectIndexer:
                     flags=dict(component.flags),
                 )
 
+        # Cadence: enrich with page info from pstxprt.dat when available
+        if scope.format == "cadence":
+            enriched = self._enrich_cadence_pages(
+                scope, components, hierarchy, sheet_name_to_path
+            )
+            if enriched is not None:
+                components, hierarchy, sheet_name_to_path = enriched
+
         return ProjectIndex(
             scope=scope,
             components=components,
@@ -171,6 +180,93 @@ class ProjectIndexer:
             ),
         )
 
+    @staticmethod
+    def _enrich_cadence_pages(
+        scope: ProjectScope,
+        components: dict[str, ComponentInstance],
+        hierarchy: list[SheetInfo],
+        sheet_name_to_path: dict[str, str],
+    ) -> (
+        tuple[dict[str, ComponentInstance], list[SheetInfo], dict[str, str]] | None
+    ):
+        """Enrich Cadence project with page info from pstxprt.dat.
+
+        Returns (components, hierarchy, sheet_name_to_path) or None if
+        pstxprt.dat is unavailable.
+        """
+        from .cadence.netlist_dat_parser import find_netlist_dir, parse_pstxprt
+
+        netlist_dir = find_netlist_dir(scope.root_schematic)
+        if netlist_dir is None:
+            return None
+        pstxprt_path = netlist_dir / "pstxprt.dat"
+        if not pstxprt_path.exists():
+            return None
+
+        part_info = parse_pstxprt(pstxprt_path)
+        if not part_info:
+            return None
+
+        # Build ref -> page mapping
+        ref_to_page: dict[str, str] = {}
+        page_refs: dict[str, list[str]] = {}
+        for ref, info in part_info.items():
+            page = info.get("page")
+            if page:
+                ref_to_page[ref] = page
+                page_refs.setdefault(page, []).append(ref)
+
+        if not page_refs:
+            return None
+
+        # Sort pages numerically (page5, page6, ...)
+        def _page_sort_key(name: str) -> int:
+            m = _re.search(r"\d+", name)
+            return int(m.group()) if m else 0
+
+        sorted_pages = sorted(page_refs.keys(), key=_page_sort_key)
+
+        # Build new hierarchy
+        new_hierarchy: list[SheetInfo] = []
+        new_sheet_name_to_path: dict[str, str] = {}
+        for page_name in sorted_pages:
+            sheet_path = f"/{page_name}"
+            new_hierarchy.append(
+                SheetInfo(
+                    sheet_name=page_name,
+                    sheet_file=scope.root_schematic.name,
+                    sheet_path=sheet_path,
+                    sheet_type="hierarchy",
+                    component_count=len(page_refs[page_name]),
+                )
+            )
+            new_sheet_name_to_path[page_name] = sheet_path
+
+        # Reassign component sheet_paths (frozen dataclass — recreate)
+        new_components: dict[str, ComponentInstance] = {}
+        for ref, comp in components.items():
+            page = ref_to_page.get(ref)
+            if page:
+                new_path = f"/{page}"
+            else:
+                # Components not in pstxprt.dat: keep on first page
+                new_path = new_hierarchy[0].sheet_path if new_hierarchy else "/"
+            new_components[ref] = ComponentInstance(
+                reference=comp.reference,
+                instance_id=comp.instance_id,
+                value=comp.value,
+                lib_id=comp.lib_id,
+                footprint=comp.footprint,
+                source_schematic=comp.source_schematic,
+                sheet_path=new_path,
+                sheet_type="hierarchy",
+                pins=comp.pins,
+                properties=comp.properties,
+                flags=comp.flags,
+            )
+
+        return new_components, new_hierarchy, new_sheet_name_to_path
+
     def _build_sheet_records(self, scope: ProjectScope) -> list["_SheetRecord"]:
         records: list[_SheetRecord] = [
             _SheetRecord(
@@ -180,7 +276,12 @@ class ProjectIndexer:
                 sheet_type="root",
             )
         ]
-        root_parser = SchematicParser(str(scope.root_schematic), include_child_sheets=False)
+        if scope.format == "cadence":
+            # Cadence XML: all pages in one file, pages reported by get_sheets()
+            # but they all reference the same file — no child traversal needed
+            return records
+
+        root_parser = get_schematic_parser(str(scope.root_schematic), include_child_sheets=False)
         for sheet in root_parser.get_sheet_instance_records():
             source_schematic = Path(sheet["source_schematic"]).resolve()
             child_file = (source_schematic.parent / sheet["sheet_file"]).resolve()

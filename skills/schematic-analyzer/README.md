@@ -1,10 +1,10 @@
 # Schematic Analyzer
 
-A Claude Code skill for analyzing KiCad schematics with accuracy-first principles.
+A Claude Code skill for analyzing KiCad schematics and Cadence OrCAD Capture XML exports with accuracy-first principles.
 
 ## Overview
 
-Schematic Analyzer helps you understand hardware designs by querying KiCad schematic files directly, without dumping raw files into context. It provides structured JSON output for components, nets, pages, and subsystems.
+Schematic Analyzer helps you understand hardware designs by querying KiCad (.kicad_sch) and Cadence OrCAD Capture XML (.xml) schematic files directly, without dumping raw files into context. It provides structured JSON output for components, nets, pages, and subsystems.
 
 ## Key Features
 
@@ -64,6 +64,10 @@ schematic-analyzer/
 ├── SCHEMATIC_STRATEGY.md # Reading strategy (workflows, principles)
 ├── scripts/              # CLI tools
 │   ├── schematic-cli.py  # Main CLI entry point
+│   ├── tools/
+│   │   ├── kicad/        # KiCad format parsers
+│   │   ├── cadence/      # Cadence OrCAD XML parsers
+│   │   └── parser_factory.py  # Auto-detect format and dispatch
 │   └── requirements.txt  # Python dependencies
 ├── patterns/             # Pattern YAML examples (i2c, spi, uart, etc.)
 ├── evals/                # Evaluation test cases
@@ -81,12 +85,22 @@ schematic-analyzer/
 - **pdf**: Used for reading datasheets when device-specific information is needed
 - **ee-datasheet-master**: Used for detailed datasheet analysis (pin functions, electrical specs, device-specific behavior)
 
+## Supported Formats
+
+| Format | Extension | Notes |
+|--------|-----------|-------|
+| KiCad | `.kicad_sch` | Requires `kicad-cli` for netlist export |
+| Cadence OrCAD | `.xml` | Exported from OrCAD Capture via File → Export → XML. No external tools needed. |
+
+Format is auto-detected from file content.
+
 ## Dependencies
 
 ### Required
 
 - **Python 3.10+**
-- **KiCad CLI** - Required for netlist export and connectivity analysis
+- **KiCad CLI** - Required only for KiCad schematics (netlist export and connectivity analysis)
+  - Not needed for Cadence XML analysis
   - Linux: `kicad-cli` (installed with KiCad)
   - Windows: `kicad-cli.exe` (add KiCad install directory to PATH)
 
