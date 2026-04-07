@@ -90,8 +90,8 @@ class SchematicAnalyzer:
     def parser(self):
         """Lazy load the schematic parser."""
         if self._parser is None:
-            from tools.kicad.schematic_parser import SchematicParser
-            self._parser = SchematicParser(str(self.schematic_path))
+            from tools.parser_factory import get_schematic_parser
+            self._parser = get_schematic_parser(str(self.schematic_path))
         return self._parser
 
     @property
@@ -130,8 +130,8 @@ class SchematicAnalyzer:
         """Get a non-recursive parser for a single schematic page."""
         resolved = schematic_file.resolve()
         if resolved not in self._local_parsers:
-            from tools.kicad.schematic_parser import SchematicParser
-            self._local_parsers[resolved] = SchematicParser(str(resolved), include_child_sheets=False)
+            from tools.parser_factory import get_schematic_parser
+            self._local_parsers[resolved] = get_schematic_parser(str(resolved), include_child_sheets=False)
         return self._local_parsers[resolved]
 
     def _get_referenced_schematic_paths(self) -> list[Path]:
@@ -561,7 +561,11 @@ class SchematicAnalyzer:
         ref = reference.upper()
         component = self.project_index.components.get(ref)
         if component is None:
-            raise LookupError(ref)
+            suggestion = self._suggest_closest_ref(ref)
+            msg = f"Component '{ref}' not found"
+            if suggestion:
+                msg += f". Did you mean '{suggestion}'?"
+            raise LookupError(msg)
 
         page_index = next(
             index for index, sheet in enumerate(self.project_index.hierarchy, start=1)
@@ -572,17 +576,28 @@ class SchematicAnalyzer:
         for pin_number, net_name in sorted(phase_1["component_nets"].get(ref, {}).get("pins", {}).items()):
             if not include_full and str(net_name).startswith("unconnected-"):
                 continue
-            pin_name = self._pin_name(component, pin_number)
+            is_dat = phase_1["component_nets"].get(ref, {}).get("dat_source", False)
+            pin_name = self._pin_name(component, pin_number, dat_source=is_dat)
             pair = (str(net_name), pin_name)
             if pair in seen_net_pairs:
                 continue
             seen_net_pairs.add(pair)
-            nets.append(
-                {
-                    "name": pair[0],
-                    "pin": pair[1],
-                }
-            )
+            entry: dict[str, str] = {
+                "name": pair[0],
+                "pin": pair[1],
+            }
+            # Annotate GPIO ball-name pins with their signal function
+            if (
+                is_dat
+                and pin_name.startswith("GPIO")
+                and not re.match(r"^N\d+$", pair[0])
+            ):
+                entry["pin_function"] = pair[0]
+            nets.append(entry)
+
+        # Merge multi-pad same-net pins in compact mode (e.g. VBUS×4)
+        if not include_full:
+            nets = self._merge_multipad_pins(nets)
 
         return {
             "query_type": "component",
@@ -647,7 +662,14 @@ class SchematicAnalyzer:
         """Return one exact-net inspection payload."""
         graph = ConnectivityBuilder().build(self.project_index, self.schematic_path)
         if net_name not in graph.all_nets:
-            raise LookupError(net_name)
+            # Try case-insensitive match
+            net_lower = net_name.lower()
+            for existing in graph.all_nets:
+                if existing.lower() == net_lower:
+                    net_name = existing
+                    break
+            else:
+                raise LookupError(f"Net '{net_name}' not found")
         net = graph.all_nets[net_name]
         pin_entries = net.connected_pins
         pages = []
@@ -661,13 +683,20 @@ class SchematicAnalyzer:
             component_sheet_paths.add(component.sheet_path)
             if page_name not in pages:
                 pages.append(page_name)
-            pins.append(
-                {
-                    "ref": ref,
-                    "pin": self._pin_name(component, pin_number),
-                    "page": page_name,
-                }
-            )
+            is_dat = graph.component_nets.get(ref, {}).get("dat_source", False)
+            pin_nm = self._pin_name(component, pin_number, dat_source=is_dat)
+            pin_entry: dict[str, str] = {
+                "ref": ref,
+                "pin": pin_nm,
+                "page": page_name,
+            }
+            if (
+                is_dat
+                and pin_nm.startswith("GPIO")
+                and not re.match(r"^N\d+$", net_name)
+            ):
+                pin_entry["pin_function"] = net_name
+            pins.append(pin_entry)
         label_buckets = self._collect_net_labels(net_name, component_sheet_paths)
         return {
             "query_type": "net",
@@ -764,9 +793,9 @@ class SchematicAnalyzer:
             return None
         parser = self._local_parsers.get(sheet_file_path)
         if parser is None:
-            from tools.kicad.schematic_parser import SchematicParser
+            from tools.parser_factory import get_schematic_parser
 
-            parser = SchematicParser(str(sheet_file_path), include_child_sheets=False)
+            parser = get_schematic_parser(str(sheet_file_path), include_child_sheets=False)
             self._local_parsers[sheet_file_path] = parser
         return parser
 
@@ -1123,11 +1152,55 @@ class SchematicAnalyzer:
                 return sheet.sheet_name
         return self.scope.project_name
 
-    def _pin_name(self, component, pin_number: str) -> str:
+    @staticmethod
+    def _merge_multipad_pins(nets: list[dict[str, str]]) -> list[dict[str, str]]:
+        """Merge multi-pad pins sharing the same net (e.g. VBUS#a4..#b9 → VBUS ×4)."""
+        from collections import OrderedDict
+
+        grouped: OrderedDict[str, list[dict[str, str]]] = OrderedDict()
+        for entry in nets:
+            grouped.setdefault(entry["name"], []).append(entry)
+
+        merged: list[dict[str, str]] = []
+        for net_name, entries in grouped.items():
+            if len(entries) <= 1:
+                merged.extend(entries)
+                continue
+            # Check if all pins differ only by pad suffix (#xx)
+            base_names = set()
+            for e in entries:
+                base = re.sub(r"#\w+$", "", e["pin"])
+                base_names.add(base)
+            if len(base_names) == 1:
+                merged.append({"name": net_name, "pin": f"{base_names.pop()} ×{len(entries)}"})
+            else:
+                merged.extend(entries)
+        return merged
+
+    def _pin_name(self, component, pin_number: str, dat_source: bool = False) -> str:
+        if dat_source:
+            # DAT pin keys are already CDS_PINID functional names; skip remap
+            return str(pin_number)
         for pin in component.pins:
             if str(pin.get("number", "")) == str(pin_number):
                 return str(pin.get("name", "") or pin_number)
         return str(pin_number)
+
+    def _suggest_closest_ref(self, ref: str) -> str | None:
+        """Find closest component reference by prefix match."""
+        prefix = re.match(r"^[A-Z]+", ref)
+        if not prefix:
+            return None
+        pfx = prefix.group()
+        candidates = [r for r in self.project_index.components if r.startswith(pfx)]
+        if not candidates:
+            return None
+        # Sort by numeric suffix distance
+        ref_num = re.search(r"\d+", ref)
+        if ref_num:
+            target = int(ref_num.group())
+            candidates.sort(key=lambda r: abs(int(m.group()) - target) if (m := re.search(r"\d+", r)) else 999)
+        return candidates[0] if candidates else None
 
     def _serialize_components(self, component_nets: Optional[dict[str, Any]] = None) -> list[dict[str, Any]]:
         """Serialize parsed components into analysis/export dictionaries."""

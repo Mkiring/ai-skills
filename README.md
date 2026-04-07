@@ -13,7 +13,7 @@ This repository collects and maintains AI skill libraries for Seeed products, pr
   > - **Specialized for EE**: Understands electrical specs, I2C addresses, timing diagrams, register maps
   > - **Verified extraction**: Tested on 1000+ datasheets with 100% text extraction success
 
-- **[schematic-analyzer](skills/schematic-analyzer/README.md)** - KiCad schematic analysis with accuracy-first principles, providing structured JSON output for components, nets, pages, and subsystems *(requires: pdf, ee-datasheet-master skills, pcbparts MCP)*
+- **[schematic-analyzer](skills/schematic-analyzer/README.md)** - KiCad and Cadence OrCAD schematic analysis with accuracy-first principles, providing structured JSON output for components, nets, pages, and subsystems
 
 - **[onnx-to-cvimodel](skills/onnx-to-cvimodel/README.md)** - ONNX to CVIMODEL conversion guide for YOLO models on Sophgo CV181x TPU, with ready-to-use scripts and tested configurations for YOLO11/YOLO26 (detect/pose/seg/cls)
 
@@ -30,6 +30,28 @@ To use a skill from this repository:
 3. Integrate the skill using the current workflow supported by your assistant tooling
 
 Important: using a skill is not just copying skill files. Many skills also require extra tools, Python packages, SDKs, Docker images, KiCad CLI, or MCP services. The dependency and environment setup must be completed from that skill's own `README.md` before use.
+
+### Claude Code Plugin (Recommended)
+
+```bash
+# 1. Clone this repository
+git clone https://github.com/Seeed-Studio/ai-skills.git
+cd ai-skills
+
+# 2. Register as a local marketplace
+claude plugin marketplace add "$(pwd)"
+
+# 3. Install the plugin
+claude plugin install seeed-ai-skills
+
+# 4. Enable the plugin
+claude plugin enable seeed-ai-skills@seeed-ai-skills
+
+# 5. Verify
+claude plugin list
+```
+
+This installs all 4 skills at once: **schematic-analyzer**, **ee-datasheet-master**, **onnx-to-cvimodel**, **cv181x-media**.
 
 ### Skill-Specific Setup
 

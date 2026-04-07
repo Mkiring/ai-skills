@@ -1,0 +1,9 @@
+{
+  "name": "seeed-ai-skills",
+  "description": "AI skills for Seeed products: schematic analysis (KiCad/Cadence), datasheet extraction, ONNX-to-CVIMODEL conversion, and CV181x multimedia development.",
+  "version": "1.0.0",
+  "author": {
+    "name": "seeed-ai-skills",
+    "email": "zuobaozhu@gmail.com"
+  }
+}

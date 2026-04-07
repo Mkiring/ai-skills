@@ -43,6 +43,12 @@ class ConnectivityBuilder:
 
     def build(self, project_index: ProjectIndex, root_schematic: str | Path) -> ConnectivityGraph:
         root_path = Path(root_schematic).resolve()
+
+        # Use Cadence connectivity builder for Cadence projects
+        if getattr(project_index.scope, "format", "kicad") == "cadence":
+            from .cadence.connectivity import CadenceConnectivityBuilder
+            return CadenceConnectivityBuilder().build(project_index, root_path)
+
         all_nets: dict[str, NetConnection] = {}
         component_nets: dict[str, dict] = {}
         warnings: list[str] = []
