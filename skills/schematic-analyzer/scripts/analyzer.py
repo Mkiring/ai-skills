@@ -567,10 +567,25 @@ class SchematicAnalyzer:
                 msg += f". Did you mean '{suggestion}'?"
             raise LookupError(msg)
 
-        page_index = next(
-            index for index, sheet in enumerate(self.project_index.hierarchy, start=1)
-            if sheet.sheet_path == component.sheet_path
-        )
+        # Use page info from component_nets (from pstxprt.dat) if available
+        comp_nets = phase_1["component_nets"].get(ref, {})
+        sheet_path = comp_nets.get("sheet_path", component.sheet_path)
+
+        # Try to find page_index from hierarchy
+        page_index = 1
+        try:
+            page_index = next(
+                index for index, sheet in enumerate(self.project_index.hierarchy, start=1)
+                if sheet.sheet_path == sheet_path
+            )
+        except StopIteration:
+            # For Cadence with pstxprt.dat, extract page number from sheet_path
+            if sheet_path.startswith("page"):
+                try:
+                    page_index = int(sheet_path[4:])  # "page9" -> 9
+                except ValueError:
+                    page_index = 1
+
         nets: list[dict[str, str]] = []
         seen_net_pairs: set[tuple[str, str]] = set()
         for pin_number, net_name in sorted(phase_1["component_nets"].get(ref, {}).get("pins", {}).items()):
@@ -605,13 +620,13 @@ class SchematicAnalyzer:
             "value": component.value,
             "mpn": self._component_mpn(component),
             "page_index": page_index,
-            "page_name": self._sheet_name_from_path(component.sheet_path),
+            "page_name": self._sheet_name_from_path(sheet_path),
             "properties": dict(component.properties),
             "nets": nets,
             "neighbors": self._build_neighbors_payload(
                 ref,
                 phase_1["component_nets"],
-                component.sheet_path,
+                sheet_path,
             ),
         }
 
@@ -679,8 +694,13 @@ class SchematicAnalyzer:
             component = self.project_index.components.get(ref)
             if component is None:
                 continue
-            page_name = self._sheet_name_from_path(component.sheet_path)
-            component_sheet_paths.add(component.sheet_path)
+
+            # Use page info from component_nets (from pstxprt.dat) if available
+            comp_nets = graph.component_nets.get(ref, {})
+            sheet_path = comp_nets.get("sheet_path", component.sheet_path)
+
+            page_name = self._sheet_name_from_path(sheet_path)
+            component_sheet_paths.add(sheet_path)
             if page_name not in pages:
                 pages.append(page_name)
             is_dat = graph.component_nets.get(ref, {}).get("dat_source", False)
@@ -1147,9 +1167,17 @@ class SchematicAnalyzer:
         }
 
     def _sheet_name_from_path(self, sheet_path: str) -> str:
+        # First try to find in hierarchy (for KiCad multi-page)
         for sheet in self.project_index.hierarchy:
             if sheet.sheet_path == sheet_path:
                 return sheet.sheet_name
+
+        # For Cadence with pstxprt.dat, sheet_path may be like "page9", "page30"
+        # In this case, return the page name directly
+        if sheet_path.startswith("page") and sheet_path != "/":
+            return sheet_path
+
+        # Fallback to project name (root schematic)
         return self.scope.project_name
 
     @staticmethod
