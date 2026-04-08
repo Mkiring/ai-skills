@@ -58,7 +58,16 @@ def cmd_query(args):
         else:
             raise ValueError("No query type selected")
     except (LookupError, ValueError) as exc:
-        print(str(exc), file=sys.stderr)
+        # Return structured error JSON
+        error_msg = str(exc)
+        error_payload = {
+            "error": "not_found" if "not found" in error_msg.lower() else "validation_error",
+            "message": error_msg,
+        }
+        # Try to extract suggestion for not_found errors
+        if "Did you mean" in error_msg:
+            error_payload["suggestion"] = error_msg.split("Did you mean '")[1].rstrip("'?")
+        write_json_output(error_payload, args.output)
         return 1
 
     write_json_output(payload, args.output)

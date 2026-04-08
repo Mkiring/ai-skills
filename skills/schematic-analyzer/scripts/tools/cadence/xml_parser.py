@@ -188,6 +188,7 @@ class CadenceXMLParser:
         self._nets: Optional[list[SchematicNet]] = None
         self._pin_net_map: Optional[dict[str, dict[str, str]]] = None  # ref -> {pin_name -> net_name}
         self._title_block: Optional[dict[str, str]] = None
+        self._unmatched_pin_count: int = 0  # Count of pins not matched to any net
 
     def _ensure_parsed(self) -> None:
         """Parse the XML file if not already done."""
@@ -620,6 +621,7 @@ class CadenceXMLParser:
 
         # Step 7: Match pins to nets
         self._pin_net_map = {}
+        unmatched_pins: list[tuple[str, str]] = []  # Track unmatched pins: (ref, pin_name)
         for part in self._parts:
             ref = part.reference.upper()
             if ref not in self._pin_net_map:
@@ -633,6 +635,11 @@ class CadenceXMLParser:
                 net_name = coord_to_net.get((part.page_index, pin.abs_x, pin.abs_y))
                 if net_name:
                     self._pin_net_map[ref][pin.name] = net_name
+                else:
+                    unmatched_pins.append((ref, pin.name))
+
+        # Store unmatched pins count for warning
+        self._unmatched_pin_count = len(unmatched_pins)
 
         # Store resolved net names for later
         self._net_id_to_name = net_id_to_name
@@ -877,6 +884,15 @@ class CadenceXMLParser:
         """Get the complete pin-to-net mapping. {ref: {pin_name: net_name}}"""
         self._ensure_parsed()
         return dict(self._pin_net_map)
+
+    def get_unmatched_pin_count(self) -> int:
+        """Get the number of pins that could not be matched to any net via coordinate matching.
+
+        This is a quality metric for XML coordinate matching. A high count may indicate
+        coordinate misalignment or missing wire connections.
+        """
+        self._ensure_parsed()
+        return self._unmatched_pin_count
 
     def get_page_count(self) -> int:
         """Get number of schematic pages."""

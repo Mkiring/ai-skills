@@ -14,7 +14,7 @@ from typing import Any, Optional
 from ..connectivity_builder import ConnectivityGraph, NetConnection
 from ..kicad.netlist_parser import NetlistComponent, NetlistNet
 from ..project_indexer import ProjectIndex
-from .netlist_dat_parser import find_netlist_dir, build_pin_net_map_from_dat
+from .netlist_dat_parser import find_netlist_dir, build_pin_net_map_from_dat, parse_pstxprt
 from .xml_parser import CadenceXMLParser
 
 
@@ -47,7 +47,9 @@ class CadenceConnectivityBuilder:
         parser = CadenceXMLParser(str(root_path))
 
         # Try authoritative .dat source first
-        netlist_dir = find_netlist_dir(root_path)
+        # If root_path is a file (e.g., XML schematic), use its parent directory
+        search_path = root_path.parent if root_path.is_file() else root_path
+        netlist_dir = find_netlist_dir(search_path)
         if netlist_dir is not None:
             dat_map = build_pin_net_map_from_dat(netlist_dir)
             if dat_map:
@@ -65,21 +67,42 @@ class CadenceConnectivityBuilder:
         root_path = Path(root_schematic).resolve()
         pin_net_map, source, parser = self._get_pin_net_map(root_path)
 
+        # Try to load page information from pstxprt.dat
+        page_info: dict[str, dict] = {}
+        if source == "pstxnet.dat":
+            # pstxprt.dat is in the same directory as pstxnet.dat
+            search_path = root_path.parent if root_path.is_file() else root_path
+            netlist_dir = find_netlist_dir(search_path)
+            if netlist_dir:
+                pstxprt_file = netlist_dir / "pstxprt.dat"
+                if pstxprt_file.exists():
+                    page_info = parse_pstxprt(pstxprt_file)
+
         all_nets_data: dict[str, NetConnection] = {}
         component_nets: dict[str, dict] = {}
         warnings: list[str] = []
         if source == "xml_coordinate":
             warnings.append("Using XML coordinate matching (no pstxnet.dat found). "
                           "For higher accuracy, export Allegro netlist.")
+            # Add warning for unmatched pins
+            unmatched_count = parser.get_unmatched_pin_count()
+            if unmatched_count > 0:
+                warnings.append(f"XML coordinate matching: {unmatched_count} pins could not be matched to nets. "
+                              "This may indicate coordinate misalignment or incomplete wiring.")
 
         # Build component_nets from pin-net map
         for ref, pin_nets in pin_net_map.items():
             comp = project_index.components.get(ref)
+            # Use page from pstxprt.dat if available, otherwise use XML's sheet_path
+            sheet_path = comp.sheet_path if comp else "/"
+            if ref in page_info:
+                sheet_path = page_info[ref]["page"]
+
             component_nets[ref] = {
                 "pins": dict(pin_nets),
                 "net_count": len(set(pin_nets.values())),
                 "reference": ref,
-                "sheet_path": comp.sheet_path if comp else "/",
+                "sheet_path": sheet_path,
                 "dat_source": source == "pstxnet.dat",
             }
 
