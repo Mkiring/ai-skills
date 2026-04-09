@@ -147,16 +147,50 @@ def _transform_pin_coords(
 def is_cadence_xml(file_path: str | Path) -> bool:
     """Check if an XML file is a Cadence OrCAD Capture export.
 
-    Detects by looking for the dsn.xsd schema reference in the root element.
+    Uses multiple heuristic checks for robustness across different
+    OrCAD export versions and configurations:
+    1. dsn.xsd schema reference (standard OrCAD export)
+    2. <Design root element (OrCAD Capture XML structure)
+    3. Cadence-specific elements: <Schematic>, <PartInst>, <Cache>
+    4. Cadence namespace patterns in root element
     """
     path = Path(file_path)
     if not path.exists() or path.suffix.lower() != ".xml":
         return False
     try:
-        # Read first 1KB to check header without parsing full file
+        # Read first 4KB to check header without parsing full file
         with open(path, "r", encoding="utf-8", errors="ignore") as f:
-            header = f.read(1024)
-        return "dsn.xsd" in header and "<Design" in header
+            header = f.read(4096)
+
+        # Strong indicators (any one is sufficient)
+        strong_indicators = [
+            "dsn.xsd",
+            "<Design",
+            "<Schematic>",
+            "xsi:schemaLocation",
+        ]
+        strong_count = sum(1 for ind in strong_indicators if ind in header)
+        if strong_count >= 2:
+            return True
+
+        # Moderate indicators (need 2+ to confirm)
+        moderate_indicators = [
+            "<PartInst",
+            "<Cache>",
+            "<PortInstScalar",
+            "<NetScalar",
+            "<TitleBlock",
+            "<PageDateTime",
+        ]
+        moderate_count = sum(1 for ind in moderate_indicators if ind in header)
+        if moderate_count >= 2:
+            return True
+
+        # Single strong indicator + one moderate indicator
+        if strong_count >= 1 and moderate_count >= 1:
+            return True
+
+        return False
     except Exception:
         return False
 
@@ -513,6 +547,29 @@ class CadenceXMLParser:
                     iref=iref,
                 ))
 
+    # Flexible field name mappings for title block properties
+    _TITLE_BLOCK_FIELD_MAP = {
+        "rev": [
+            "rev", "revision", "rev.", "version", "ver",
+            "sheet revision", "drawing revision", "revsion",
+        ],
+        "date": [
+            "date", "doc date", "document date", "create date",
+            "created", "design date", "modified",
+        ],
+        "company": [
+            "organization", "company", "org", "firm",
+            "engineer", "author", "designed by",
+        ],
+        "title": [
+            "title", "project", "design name", "project name",
+            "schematic name", "drawing title",
+        ],
+        "comment": [
+            "comment", "comments", "note", "notes", "description",
+        ],
+    }
+
     def _parse_title_block(self) -> None:
         """Extract title block info from the first page that has one."""
         self._title_block = {"title": "", "date": "", "rev": "", "company": "", "comment": ""}
@@ -521,6 +578,12 @@ class CadenceXMLParser:
         design_defn = self._root.find("Defn")
         if design_defn is not None:
             self._title_block["title"] = design_defn.get("rootName", "")
+
+        # Build reverse lookup: lowercase alias -> field key
+        alias_to_key: dict[str, str] = {}
+        for key, aliases in self._TITLE_BLOCK_FIELD_MAP.items():
+            for alias in aliases:
+                alias_to_key[alias] = key
 
         # Try to get more info from first page's TitleBlock
         for page_info in self._pages:
@@ -533,17 +596,25 @@ class CadenceXMLParser:
                 prop_defn = prop.find("Defn")
                 if prop_defn is None:
                     continue
-                pname = prop_defn.get("name", "").lower()
+                pname = prop_defn.get("name", "").lower().strip()
                 pval = prop_defn.get("val", "")
-                if "rev" in pname:
-                    self._title_block["rev"] = pval
-                elif pname in ("date", "doc date"):
-                    self._title_block["date"] = pval
-                elif pname in ("organization", "company"):
-                    self._title_block["company"] = pval
-                elif pname == "title":
-                    if pval:
-                        self._title_block["title"] = pval
+                if not pval:
+                    continue
+
+                # Exact match first
+                key = alias_to_key.get(pname)
+                if key is None:
+                    # Substring match: check if any alias is contained in pname
+                    for alias, mapped_key in alias_to_key.items():
+                        if alias in pname:
+                            key = mapped_key
+                            break
+
+                if key == "title" and self._title_block.get("title"):
+                    # Don't override rootName with empty/generic title
+                    continue
+                if key:
+                    self._title_block[key] = pval
             break  # Only need first title block
 
     def _build_connectivity(self) -> None:

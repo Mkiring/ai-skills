@@ -294,11 +294,15 @@ class SchematicParser:
         ls_block = content[start:i + 1]
 
         # Find top-level symbols (contain ":" like "Device:R") and extract their blocks
+        # Support both quoted "lib:id" and unquoted lib:id formats
         lines = ls_block.split('\n')
         li = 0
         while li < len(lines):
             line = lines[li].strip()
             top_match = re.match(r'\(symbol\s+"([^"]*:[^"]*)"', line)
+            if not top_match:
+                # Fallback: unquoted format (symbol lib:id ...)
+                top_match = re.match(r'\(symbol\s+([^\s(]+:[^\s(]+)', line)
             if top_match:
                 lib_id = top_match.group(1)
                 # Extract full block for this top-level symbol

@@ -5,9 +5,10 @@ These files provide authoritative pin-net connectivity computed by the
 OrCAD engine, which is more accurate than XML coordinate matching.
 
 Key features:
-- CDS_PINID extraction with escape sequence handling (\X\ -> X)
+- Dual-format pin extraction: CDS_PINID='...' and plain 'PIN_NAME' styles
+- CDS_PINID escape sequence handling (\X\ -> X)
 - Mux pin name resolution for SoC GPIO (| separated alternatives)
-- Page information from pstxprt.dat for multi-page schematics
+- Flexible page detection from pstxprt.dat (P_PATH, SECTION_NUMBER, etc.)
 """
 
 from __future__ import annotations
@@ -20,7 +21,11 @@ from typing import Optional
 def find_netlist_dir(root_path: Path) -> Optional[Path]:
     """Find the directory containing Allegro netlist files.
 
-    Searches for common netlist directory names and pstxnet.dat file.
+    Searches for netlist directories using multiple strategies:
+    1. Direct child dirs with 'netlist' in name (case-insensitive) + pstxnet.dat
+    2. Common exact directory names (netlist, allegro, etc.)
+    3. pstxnet.dat in search_path itself
+    4. Recursive search (max depth 3) for pstxnet.dat
 
     Args:
         root_path: Root schematic directory or file to search from.
@@ -31,36 +36,41 @@ def find_netlist_dir(root_path: Path) -> Optional[Path]:
     # If root_path is a file, use its parent directory
     search_path = root_path.parent if root_path.is_file() else root_path
 
-    # Also check for netlist_* pattern directories
-    for child in search_path.iterdir():
-        if child.is_dir() and child.name.startswith("netlist_"):
-            dat_file = child / "pstxnet.dat"
-            if dat_file.is_file():
-                return child
+    if not search_path.is_dir():
+        return None
 
-    # Common directory names for Allegro netlists
-    netlist_dir_names = [
-        "netlist",
-        "allegro",
-        "pstxnet",
-    ]
+    # Helper: check if a directory contains a recognizable Allegro netlist file
+    def _has_netlist_dat(d: Path) -> bool:
+        for name in ("pstxnet.dat", "PSTXNET.DAT"):
+            if (d / name).is_file():
+                return True
+        return False
 
-    for dir_name in netlist_dir_names:
-        netlist_dir = search_path / dir_name
-        if netlist_dir.is_dir():
-            # Check for pstxnet.dat file
-            dat_file = netlist_dir / "pstxnet.dat"
-            if dat_file.is_file():
-                return netlist_dir
+    # Strategy 1: Direct child directories whose name suggests netlist data
+    try:
+        for child in search_path.iterdir():
+            if not child.is_dir():
+                continue
+            low = child.name.lower()
+            if "netlist" in low or low in ("allegro", "pstxnet", "cadence", "output"):
+                if _has_netlist_dat(child):
+                    return child
+    except OSError:
+        pass
 
-    # Also check search_path directly
-    dat_file = search_path / "pstxnet.dat"
-    if dat_file.is_file():
+    # Strategy 2: Check search_path itself
+    if _has_netlist_dat(search_path):
         return search_path
 
-    # Recursive search for pstxnet.dat (depth-limited)
-    for dat_file in search_path.rglob("pstxnet.dat"):
-        return dat_file.parent
+    # Strategy 3: Recursive search with depth limit
+    try:
+        for dat_file in search_path.rglob("pstxnet.dat"):
+            return dat_file.parent
+        # Also try uppercase variant on case-sensitive filesystems
+        for dat_file in search_path.rglob("PSTXNET.DAT"):
+            return dat_file.parent
+    except OSError:
+        pass
 
     return None
 
@@ -127,20 +137,28 @@ def parse_pstxnet(file_path: Path) -> dict[str, dict[str, str]]:
     computed by the OrCAD engine. Each NODE_NAME entry maps a
     component reference and pin to a net name.
 
-    File format:
+    Supports two pin identification formats:
+
+    Format A (CDS_PINID):
         NET_NAME
         'UART6_RX_M0'
-         '@...':C_SIGNAL='...';
-        NODE_NAME	U7 1B5
+        NODE_NAME  U7 1B5
          '@...': '\PINNAME':CDS_PINID='\PINID';
+
+    Format B (plain quoted pin name, no CDS_PINID):
+        NET_NAME
+        'SYS_VIN_HV_01'
+        NODE_NAME  J37 C65
+         '@...': 'PIN_NAME';
 
     Args:
         file_path: Path to pstxnet.dat file.
 
     Returns:
         Dictionary mapping {refdes: {pin_name: net_name}}.
-        Pin names are extracted from CDS_PINID with proper escape
-        sequence handling and mux resolution.
+        Pin names are extracted from CDS_PINID (Format A) with proper
+        escape sequence handling and mux resolution, or from plain
+        quoted strings (Format B) as a fallback.
     """
     pin_net_map: dict[str, dict[str, str]] = {}
 
@@ -172,14 +190,22 @@ def parse_pstxnet(file_path: Path) -> dict[str, dict[str, str]]:
             node_match = re.match(r'NODE_NAME\s+(\S+)\s+(\S+)', line)
             if node_match:
                 refdes = node_match.group(1)
-                _pin_number = node_match.group(2)
+                pin_number = node_match.group(2)
+                pin_id = None
 
-                # Look for CDS_PINID in the next few lines
-                # Format: '@...': 'pinname':CDS_PINID='pinid';
-                # or: '@...':CDS_PINID='pinid';
+                # Look for pin identification in the next few lines
+                # Priority 1: CDS_PINID='...' (Format A)
+                # Priority 2: Plain quoted pin name (Format B)
+                # Fallback: Use pin_number from NODE_NAME line
                 j = i + 1
                 while j < len(lines) and j < i + 5:
                     check_line = lines[j]
+                    # Stop scanning if we hit the next NET_NAME/NODE_NAME block
+                    stripped = check_line.strip()
+                    if stripped.startswith('NET_NAME') or stripped.startswith('NODE_NAME'):
+                        break
+
+                    # Format A: CDS_PINID='pinid'
                     pinid_match = re.search(r"CDS_PINID='([^']+)'", check_line)
                     if pinid_match:
                         raw_pin_id = pinid_match.group(1)
@@ -190,13 +216,26 @@ def parse_pstxnet(file_path: Path) -> dict[str, dict[str, str]]:
                         # Resolve mux pin if needed (e.g., "FUNC1 | FUNC2 | GPIO")
                         if '|' in pin_id:
                             pin_id = _select_mux_pin_name(pin_id, current_net)
-
-                        if refdes not in pin_net_map:
-                            pin_net_map[refdes] = {}
-
-                        pin_net_map[refdes][pin_id] = current_net
                         break
+
+                    # Format B: plain quoted pin name like 'PIN_NAME';
+                    # Look for a quoted string that looks like a pin identifier
+                    # (not a full path with ':' which is a component reference line)
+                    plain_pin_match = re.search(r"^\s*'([^':]+)'\s*;", check_line)
+                    if plain_pin_match and pin_id is None:
+                        raw_name = plain_pin_match.group(1)
+                        pin_id = _clean_pin_escape(raw_name)
+                        # Don't break yet — CDS_PINID on a later line takes priority
                     j += 1
+
+                # Fallback: use pin_number from NODE_NAME line
+                if pin_id is None:
+                    pin_id = _clean_pin_escape(pin_number)
+
+                if pin_id and current_net:
+                    if refdes not in pin_net_map:
+                        pin_net_map[refdes] = {}
+                    pin_net_map[refdes][pin_id] = current_net
 
         i += 1
 
@@ -207,13 +246,15 @@ def parse_pstxprt(file_path: Path) -> dict[str, dict]:
     r"""Parse Allegro pstxprt.dat file to extract component page information.
 
     The pstxprt.dat file contains component-to-page mapping data.
-    Each PART_NAME block includes the P_PATH which contains the page number.
+    Supports multiple page identification methods:
 
-    File format:
-        PART_NAME
-         C1 'CC_C0201_DISCRETE_100NF':;
-        SECTION_NUMBER 1
-         '@...': P_PATH='...\pageX_...'
+    Method 1: P_PATH with pageX pattern:
+        P_PATH='...\pageX_...'
+
+    Method 2: P_PATH without pageX — extract page from other patterns:
+        P_PATH='...\SCH_1_PAGE_X_...'
+
+    Method 3: SECTION_NUMBER as fallback page indicator.
 
     Args:
         file_path: Path to pstxprt.dat file.
@@ -232,6 +273,7 @@ def parse_pstxprt(file_path: Path) -> dict[str, dict]:
     i = 0
     current_refdes = ""
     current_value = ""
+    current_section = ""
 
     while i < len(lines):
         line = lines[i].strip()
@@ -245,26 +287,83 @@ def parse_pstxprt(file_path: Path) -> dict[str, dict]:
                 if part_match:
                     current_refdes = part_match.group(1)
                     current_value = part_match.group(2)
+                    current_section = ""
+
+        # Track SECTION_NUMBER as fallback page info
+        elif line.startswith('SECTION_NUMBER'):
+            sec_match = re.match(r'SECTION_NUMBER\s+(\d+)', line)
+            if sec_match:
+                current_section = sec_match.group(1)
 
         # Look for P_PATH which contains page info
-        if 'P_PATH=' in line:
-            # Extract page number from P_PATH='...\pageX_...'
-            page_match = re.search(r"page(\d+)", line)
-            if page_match and current_refdes:
-                page_num = page_match.group(1)
+        elif 'P_PATH=' in line and current_refdes:
+            ppath_match = re.search(r"P_PATH='([^']+)'", line)
+            if ppath_match:
+                ppath = ppath_match.group(1)
+                page_name = _extract_page_from_path(ppath)
+
                 page_info[current_refdes] = {
                     "primitive": current_value,
-                    "page": f"page{page_num}",
-                    "footprint": "",  # Not available in pstxprt.dat
+                    "page": page_name,
+                    "footprint": "",
                     "value": current_value,
                 }
                 # Reset after processing
                 current_refdes = ""
                 current_value = ""
+                current_section = ""
+
+        # If we reached a new PART_NAME without finding P_PATH, use SECTION_NUMBER
+        elif line.startswith('PART_NAME') and current_refdes and current_section:
+            page_info[current_refdes] = {
+                "primitive": current_value,
+                "page": f"page{current_section}",
+                "footprint": "",
+                "value": current_value,
+            }
+            current_refdes = ""
+            current_value = ""
+            current_section = ""
 
         i += 1
 
+    # Handle last component if it didn't get P_PATH but has SECTION_NUMBER
+    if current_refdes and current_section:
+        page_info[current_refdes] = {
+            "primitive": current_value,
+            "page": f"page{current_section}",
+            "footprint": "",
+            "value": current_value,
+        }
+
     return page_info
+
+
+def _extract_page_from_path(ppath: str) -> str:
+    """Extract page identifier from a P_PATH string.
+
+    Tries multiple patterns:
+    1. pageN (standard OrCAD)
+    2. PAGE_N (alternative naming)
+    3. Last numeric segment as fallback
+    """
+    # Pattern 1: pageN (e.g., page1, page9)
+    m = re.search(r'[Pp][Aa][Gg][Ee](\d+)', ppath)
+    if m:
+        return f"page{m.group(1)}"
+
+    # Pattern 2: PAGE_N or PAGE.N
+    m = re.search(r'PAGE[_\.\s]*(\d+)', ppath, re.IGNORECASE)
+    if m:
+        return f"page{m.group(1)}"
+
+    # Pattern 3: Look for SCH_X or similar schematic sheet references
+    m = re.search(r'SCH[_\.\s]*(\d+)', ppath, re.IGNORECASE)
+    if m:
+        return f"page{m.group(1)}"
+
+    # Fallback: use the full path hash as a unique page identifier
+    return f"page_{hash(ppath) % 10000}"
 
 
 def build_pin_net_map_from_dat(netlist_dir: Path) -> dict[str, dict[str, str]]:
