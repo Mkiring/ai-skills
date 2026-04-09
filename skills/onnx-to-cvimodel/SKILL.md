@@ -1,6 +1,6 @@
 ---
 name: onnx-to-cvimodel
-description: "Expert guide for converting ONNX models to CVIMODEL format for Sophgo CV181x TPU. Supports YOLO11/YOLO26 (detect, pose, seg, cls) and BiSeNetv2 (semantic segmentation). Includes tested conversion scripts, quantization tables (qtables), and complete workflow documentation. Use when user needs to convert ONNX models to CVIMODEL, set up TPU-MLIR conversion pipeline, configure output names and quantization, or troubleshoot conversion issues."
+description: "Expert guide for converting ONNX models to CVIMODEL format for Sophgo CV181x TPU. Supports YOLO11/YOLO26 (detect, pose, seg, cls) and BiSeNetv2 (semantic segmentation). Includes tested conversion scripts, quantization tables (qtables), ION memory optimization (--quant_output), validation workflow, and complete documentation. Use when user needs to convert ONNX models to CVIMODEL, set up TPU-MLIR conversion pipeline, configure output names and quantization, optimize ION memory usage, validate conversion accuracy, or troubleshoot conversion issues."
 license: Complete terms in LICENSE.txt
 ---
 
@@ -46,7 +46,7 @@ python3 export_and_convert.py --model yolo11n --task detect
 
 ### 3. BiSeNetv2 Semantic Segmentation
 ```bash
-./convert_bisenetv2.sh <onnx> <dataset>      # BiSeNetv2 (INT8 + BF16)
+./convert_bisenetv2.sh <onnx> <dataset>              # BiSeNetv2 (INT8 + BF16 + INT8_quant_output)
 ```
 
 ### 4. Batch Conversion
@@ -54,127 +54,133 @@ python3 export_and_convert.py --model yolo11n --task detect
 ./batch_convert_all.sh    # Convert all ONNX files in current directory
 ```
 
-## Universal Conversion Script (Full Code)
+## Critical: ION Memory Optimization (--quant_output)
+
+**Problem**: CV181x ION memory is shared between TPU, VPSS, VENC. Total ~60MB.
+INT8 models with float32 output dequantize on-chip, consuming massive ION memory.
+
+**Solution**: Use `--quant_output` flag to keep int8 output, avoiding dequantization.
 
 ```bash
-#!/bin/bash
-# Universal ONNX to CVIMODEL Conversion Script
-set -e
+# Without --quant_output (INT8 model, float32 output) → 62.89MB ION ❌
+model_deploy.py ... --quantize INT8 --model model_int8.cvimodel
 
-MODEL_TYPE="${MODEL_TYPE:-yolo11}"
-TASK="${TASK:-detect}"
-MODEL_SIZE="${MODEL_SIZE:-n}"
-CHIP="${CHIP:-cv181x}"
-CALIBRATION_EPOCHS="${CALIBRATION_EPOCHS:-100}"
-WORK_DIR="${WORK_DIR:-./work_dir}"
-
-# Get output names based on model type and task
-get_output_names() {
-    case "$TASK" in
-        detect)
-            if [[ "$MODEL_TYPE" == "yolo26" ]]; then
-                echo "/model.23/one2one_cv2.0/one2one_cv2.0.2/Conv_output_0,/model.23/one2one_cv3.0/one2one_cv3.0.2/Conv_output_0,/model.23/one2one_cv2.1/one2one_cv2.1.2/Conv_output_0,/model.23/one2one_cv3.1/one2one_cv3.1.2/Conv_output_0,/model.23/one2one_cv2.2/one2one_cv2.2.2/Conv_output_0,/model.23/one2one_cv3.2/one2one_cv3.2.2/Conv_output_0"
-            else
-                echo "/model.23/cv2.0/cv2.0.2/Conv_output_0,/model.23/cv3.0/cv3.0.2/Conv_output_0,/model.23/cv2.1/cv2.1.2/Conv_output_0,/model.23/cv3.1/cv3.1.2/Conv_output_0,/model.23/cv2.2/cv2.2.2/Conv_output_0,/model.23/cv3.2/cv3.2.2/Conv_output_0"
-            fi
-            ;;
-        seg) echo "output0,output1" ;;
-        pose|cls) echo "output0" ;;
-    esac
-}
-
-get_input_size() {
-    [[ "$TASK" == "cls" ]] && echo "224" || echo "640"
-}
-
-check_model_support() {
-    if [[ "$MODEL_TYPE" == "yolo26" ]] && [[ "$TASK" =~ ^(pose|seg)$ ]]; then
-        echo "ERROR: YOLO26 $TASK is NOT supported (uses Mod operation)"
-        echo "Use YOLO11 instead"
-        exit 1
-    fi
-}
-
-convert_model() {
-    local onnx="$1" dataset="$2"
-    local model_name="${MODEL_TYPE}${MODEL_SIZE}"
-    [[ "$TASK" != "detect" ]] && model_name="${model_name}-${TASK}"
-    local input_size=$(get_input_size)
-    local output_names=$(get_output_names)
-
-    check_model_support
-
-    mkdir -p "$WORK_DIR/$model_name/workspace"
-    cp "$onnx" "$dataset" "$WORK_DIR/$model_name/model/"
-
-    docker run --rm -v "$PWD/$WORK_DIR:/work" -w "/work/$model_name" \
-        sophgo/tpuc_dev:v3.1 bash -c "
-        source /workspace/tpu-mlir/envsetup.sh
-        cd workspace && cp ../model/* .
-
-        model_transform.py --model_name $model_name --model_def *.onnx \
-            --input_shapes '[[1,3,$input_size,$input_size]]' \
-            --mean 0.0,0.0,0.0 --scale 0.0039216,0.0039216,0.0039216 \
-            --keep_aspect_ratio --pixel_format rgb \
-            --output_names '$output_names' \
-            --test_input /work/model/*.jpg --test_result top.npz --mlir $model_name.mlir
-
-        run_calibration.py $model_name.mlir --dataset /work/dataset --input_num $CALIBRATION_EPOCHS -o calib_table
-
-        model_deploy.py --mlir $model_name.mlir --quantize INT8 --quant_input \
-            --processor $CHIP --calibration_table calib_table \
-            --test_input /work/model/*.jpg --test_reference top.npz \
-            --customization_format RGB_PACKED --fuse_preprocess --aligned_input \
-            --model ${model_name}_${CHIP}_int8.cvimodel
-        "
-
-    cp "$WORK_DIR/$model_name/workspace"/*.cvimodel ./
-}
-
-convert_model "$@"
+# With --quant_output (INT8 model, int8 output) → 34.27MB ION ✅
+model_deploy.py ... --quantize INT8 --quant_output --model model_int8_qout.cvimodel
 ```
 
-## Python Export & Convert Script
+**When to use `--quant_output`**:
+- When ION memory is constrained (< 60MB budget)
+- When the model output is used for argmax/classification (int8 argmax is equivalent for uniform quantization)
+- BiSeNetV2, classification models, any model where post-processing only needs relative ordering
+
+**When NOT to use `--quant_output`**:
+- When absolute float32 values matter (e.g., confidence thresholds at specific values)
+- When downstream processing requires float32 precision
+
+| BiSeNetv2 Variant | Model Size | ION Memory | Output Type |
+|-------------------|-----------|------------|-------------|
+| BF16 | 14 MB | 87.59 MB | float32 |
+| INT8 (no --quant_output) | 6.0 MB | 62.89 MB | float32 |
+| **INT8 (--quant_output)** | **5.9 MB** | **34.27 MB** | **int8** |
+
+## Critical: Docker tpu-mlir Mount
+
+The Docker image `sophgo/tpuc_dev:v3.1` ships with `/workspace/tpu-mlir` empty.
+You MUST mount your local tpu-mlir installation:
+
+```bash
+# Correct: mount local tpu-mlir
+docker run --rm \
+    -v /path/to/local/tpu-mlir:/workspace/tpu-mlir \
+    -v /path/to/work:/work \
+    sophgo/tpuc_dev:v3.1 bash -c \
+    'source /workspace/tpu-mlir/envsetup.sh && ...'
+
+# Wrong: using the empty /workspace/tpu-mlir inside Docker
+```
+
+## Critical: CVIMODEL Input Format
+
+Models converted with `--fuse_preprocess` expect **uint8 RGB NHWC** input, NOT float32 NCHW:
 
 ```python
-#!/usr/bin/env python3
-"""
-Export YOLO model to ONNX and convert to CVIMODEL in one go.
-"""
-import os
-import subprocess
-import argparse
+# CORRECT: feed raw uint8 RGB data
+img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+img_resized = cv2.resize(img_rgb, (MODEL_W, MODEL_H))
+input_data = np.ascontiguousarray(img_resized, dtype=np.uint8)
+# Flatten to (1, 1, 1, H*W*3) for input_image_raw
+model.inputs[0].data[:] = input_data.reshape(model.inputs[0].data.shape)
 
-def export_yolo_to_cvimodel(model_name="yolo11n", task="detect", imgsz=640):
-    """Export YOLO model and convert to CVIMODEL."""
-
-    # Export to ONNX
-    from ultralytics import YOLO
-    model = YOLO(f"{model_name}.pt")
-    onnx_path = model.export(format="onnx", imgsz=imgsz, simplify=False, opset=12)
-
-    # Run conversion script
-    task_map = {"detect": "detect", "pose": "pose", "seg": "seg", "cls": "cls"}
-    script = f"convert_{model_name.split('n')[0]}_{task_map.get(task, 'detect')}.sh"
-
-    if os.path.exists(script):
-        subprocess.run([script, onnx_path, "dataset/"])
-    else:
-        print(f"Script {script} not found, using universal script...")
-        subprocess.run([
-            "bash", "convert_to_cvimodel.sh", onnx_path, "dataset/",
-            f"MODEL_TYPE={model_name.removesuffix(model_name[-1])}",
-            f"TASK={task}"
-        ])
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--model", default="yolo11n")
-    parser.add_argument("--task", default="detect", choices=["detect", "pose", "seg", "cls"])
-    parser.add_argument("--imgsz", type=int, default=640)
-    args = parser.parse_args()
-    export_yolo_to_cvimodel(args.model, args.task, args.imgsz)
+# WRONG: feeding float32 NCHW normalized data
 ```
+
+## Validation Workflow
+
+After conversion, always validate ONNX vs CVIMODEL output consistency:
+
+```python
+# 1. ONNX inference (standard float32 pipeline)
+from ultralytics import YOLO
+import onnxruntime as ort, numpy as np, cv2
+
+sess = ort.InferenceSession("model.onnx")
+img = cv2.imread("test.jpg")
+img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+img_float = cv2.resize(img_rgb, (W, H)).astype(np.float32) / 255.0
+img_norm = (img_float - mean) / std
+img_nchw = np.transpose(img_norm, (2, 0, 1))[np.newaxis].astype(np.float32)
+onnx_out = sess.run(None, {input_name: img_nchw})[0]
+label_onnx = np.argmax(onnx_out[0], axis=0).astype(np.uint8)
+
+# 2. CVIMODEL inference (uint8 RGB, fuse_preprocess handles normalization)
+import pyruntime_cvi as cvi
+model = cvi.Model("model_cv181x_int8_qout.cvimodel", output_all_tensors=True)
+img_rgb2 = cv2.cvtColor(cv2.imread("test.jpg"), cv2.COLOR_BGR2RGB)
+input_data = np.ascontiguousarray(cv2.resize(img_rgb2, (W, H)), dtype=np.uint8)
+model.inputs[0].data[:] = input_data.reshape(model.inputs[0].data.shape)
+model.forward()
+# Find int8 output (name contains "preds" and dtype is int8)
+for out in model.outputs:
+    if "preds" in out.name:
+        cvi_out = out.data
+label_cvi = np.argmax(cvi_out[0].astype(np.int32), axis=0).astype(np.uint8)
+
+# 3. Compare
+agreement = np.sum(label_onnx == label_cvi) / label_onnx.size * 100
+print(f"Pixel agreement: {agreement:.2f}%")
+```
+
+## Tested & Validated Conversions
+
+### BiSeNetv2 Cityscapes (Full Validation)
+
+| Metric | Value |
+|--------|-------|
+| ONNX → CVIMODEL pixel agreement | **98.76%** (image 1), **99.00%** (image 2) |
+| road IoU | 0.9982 |
+| sidewalk IoU | 0.9896 |
+| building IoU | 0.9821 |
+| car IoU | 0.9161 / 0.9565 |
+| vegetation IoU | 0.9509 / 0.9440 |
+| Device inference (CV181x TPU) | pre: 2ms, infer: 276ms, post: 158ms = **436ms total** |
+| ION memory (int8_qout) | **34.27 MB** |
+
+Quantization errors are concentrated at:
+- Small object edges (pole, traffic sign) — expected INT8 precision loss
+- Class boundaries — normal quantization artifacts
+
+### YOLO Series
+
+| Model | ONNX Size | CVIMODEL Size | Command |
+|-------|-----------|---------------|---------|
+| YOLO11n detect | 10.7 MB | 3.0 MB | `./convert_yolo11_detect.sh yolo11n.onnx dataset/` |
+| YOLO11n pose | 11.3 MB | 3.6 MB | `./convert_yolo11_pose.sh yolo11n-pose.onnx dataset/` |
+| YOLO11n seg | 11.7 MB | 4.0 MB | `./convert_yolo11_seg.sh yolo11n-seg.onnx dataset/` |
+| YOLO11n cls | 10.8 MB | 3.0 MB | `./convert_yolo11_cls.sh yolo11n-cls.onnx dataset/` |
+| YOLO26n detect | 9.4 MB | 2.9 MB | `./convert_yolo26_detect.sh yolo26n.onnx dataset/` |
+| YOLO26n cls | 11.3 MB | 3.0 MB | `./convert_yolo26_cls.sh yolo26n-cls.onnx dataset/` |
+| BiSeNetv2 seg | 13 MB | 5.9 MB (INT8_qout) | `./convert_bisenetv2.sh bisenetv2.onnx dataset/` |
 
 ## Model-Specific Output Names (Copy & Paste)
 
@@ -206,38 +212,19 @@ if __name__ == "__main__":
 --mean 123.675,116.28,103.53 --scale 0.01712475,0.01750700,0.01742919
 ```
 
-## Tested & Working Conversions
+## BiSeNetv2 Conversion Details
 
-| Model | ONNX Size | CVIMODEL Size | Command |
-|-------|-----------|---------------|---------|
-| YOLO11n detect | 10.7 MB | 3.0 MB | `./convert_yolo11_detect.sh yolo11n.onnx dataset/` |
-| YOLO11n pose | 11.3 MB | 3.6 MB | `./convert_yolo11_pose.sh yolo11n-pose.onnx dataset/` |
-| YOLO11n seg | 11.7 MB | 4.0 MB | `./convert_yolo11_seg.sh yolo11n-seg.onnx dataset/` |
-| YOLO11n cls | 10.8 MB | 3.0 MB | `./convert_yolo11_cls.sh yolo11n-cls.onnx dataset/` |
-| YOLO26n detect | 9.4 MB | 2.9 MB | `./convert_yolo26_detect.sh yolo26n.onnx dataset/` |
-| YOLO26n cls | 11.3 MB | 3.0 MB | `./convert_yolo26_cls.sh yolo26n-cls.onnx dataset/` |
-| BiSeNetv2 seg | 13 MB | 6.0 MB (INT8) / 14 MB (BF16) | `./convert_bisenetv2.sh bisenetv2.onnx dataset/` |
+BiSeNetv2 is a lightweight semantic segmentation model. Key differences from YOLO:
 
-## Not Supported
-
-| Model | Reason | Alternative |
-|-------|--------|-------------|
-| YOLO26n pose | Mod operation not supported | Use YOLO11n-pose |
-| YOLO26n seg | Mod operation not supported | Use YOLO11n-seg |
-
-## BiSeNetv2 Conversion
-
-BiSeNetv2 is a lightweight segmentation model. It uses different preprocessing from YOLO models (ImageNet mean/scale instead of 0-1 normalization).
-
-### Key Differences from YOLO
 - **Input shape**: Non-square `[1,3,512,1024]` (H, W configurable via env vars)
 - **Preprocessing**: ImageNet mean/scale (`123.675,116.28,103.53` / `0.01712,0.01751,0.01743`)
 - **No `--keep_aspect_ratio`**: Fixed resolution input
-- **Dual output**: Produces both INT8 and BF16 CVIMODEL files
+- **Triple output**: Produces INT8, BF16, and INT8+quant_output CVIMODEL files
+- **Recommended**: Use INT8+quant_output variant for ION-constrained devices
 
 ### Usage
 ```bash
-# Basic conversion
+# Basic conversion (produces 3 variants: int8, bf16, int8_qout)
 ./scripts/convert_bisenetv2.sh bisenetv2.onnx ./dataset
 
 # Custom resolution
@@ -258,11 +245,15 @@ MODEL_NAME=bisenetv2_custom ./scripts/convert_bisenetv2.sh bisenetv2.onnx ./data
 | `OUTPUT_NAME` | `preds` | ONNX output tensor name |
 | `MEAN` | `123.675,116.28,103.53` | ImageNet mean |
 | `SCALE` | `0.01712475,0.01750700,0.01742919` | ImageNet scale |
+| `QUANT_OUTPUT` | `true` | Whether to generate --quant_output variant |
 
 ## Docker Command Template (Manual)
 
 ```bash
-docker run --privileged --rm -v $PWD:/workspace -w /workspace sophgo/tpuc_dev:v3.1 bash -c "
+docker run --privileged --rm \
+    -v /path/to/local/tpu-mlir:/workspace/tpu-mlir \
+    -v $PWD:/work \
+    -w /workspace sophgo/tpuc_dev:v3.1 bash -c "
 source /workspace/tpu-mlir/envsetup.sh
 mkdir -p workspace && cd workspace
 cp ../model.onnx .
@@ -279,21 +270,14 @@ model_deploy.py --mlir model.mlir --quantize INT8 --quant_input \
 "
 ```
 
-## Quick Onnx Export Commands
+## Quick ONNX Export Commands
 
 ```python
-# Detection
 from ultralytics import YOLO
-YOLO('yolo11n.pt').export(format='onnx', imgsz=640, simplify=False, opset=12)
-
-# Classification
-YOLO('yolo11n-cls.pt').export(format='onnx', imgsz=224, simplify=False, opset=12)
-
-# Pose
-YOLO('yolo11n-pose.pt').export(format='onnx', imgsz=640, simplify=False, opset=12)
-
-# Segmentation
-YOLO('yolo11n-seg.pt').export(format='onnx', imgsz=640, simplify=False, opset=12)
+YOLO('yolo11n.pt').export(format='onnx', imgsz=640, simplify=False, opset=12)     # Detection
+YOLO('yolo11n-cls.pt').export(format='onnx', imgsz=224, simplify=False, opset=12)   # Classification
+YOLO('yolo11n-pose.pt').export(format='onnx', imgsz=640, simplify=False, opset=12)  # Pose
+YOLO('yolo11n-seg.pt').export(format='onnx', imgsz=640, simplify=False, opset=12)   # Segmentation
 ```
 
 ## Check ONNX Outputs
@@ -313,17 +297,25 @@ for output in model.graph.output:
 
 ## Hybrid Quantization (qtable)
 
-For pose/segmentation, use qtable for better accuracy. Qtables are included in this skill:
+For pose/segmentation, use qtable for better accuracy:
 
 ```bash
-# Copy qtables from skill assets to working directory
-cp ~/.claude/skills/skills/onnx-to-cvimodel/assets/yolo11n_pose_qtable ./
-cp ~/.claude/skills/skills/onnx-to-cvimodel/assets/yolo11n_seg ./
+# Copy qtables from skill assets
+cp assets/yolo11n_pose_qtable ./
+cp assets/yolo11n_seg ./
 
 # Use in deployment
 model_deploy.py ... --quantize_table yolo11n_pose_qtable \
   --model yolo11n-pose_cv181x_mix.cvimodel
 ```
+
+## Not Supported
+
+| Model | Reason | Alternative |
+|-------|--------|-------------|
+| YOLO26n pose | Mod operation not supported | Use YOLO11n-pose |
+| YOLO26n seg | Mod operation not supported | Use YOLO11n-seg |
+| ONNX TopK/Argmax ops | Not supported in TPU-MLIR | Post-process on CPU instead |
 
 ## Common Issues
 
@@ -332,24 +324,31 @@ model_deploy.py ... --quantize_table yolo11n_pose_qtable \
 **Solution**: Use YOLO11 instead
 
 ### "model_transform: command not found"
-**Solution**: `source /workspace/tpu-mlir/envsetup.sh && ./build.sh`
+**Solution**: `source /workspace/tpu-mlir/envsetup.sh`
 
 ### Wrong output order
 **Solution**: For detection, outputs MUST be alternating (Box, Class, Box, Class...)
 
-## When to Use This Skill
+### ION memory exceeds budget
+**Solution**: Add `--quant_output` to keep int8 output, saves ~28MB for typical segmentation models
 
-- User wants to convert YOLO or BiSeNetv2 models to CVIMODEL
-- User mentions reCamera, SG200x, CV181x
-- User needs quick conversion scripts
-- User asks about YOLO11 vs YOLO26 differences
-- User asks about semantic segmentation on CV181x
+### pymlir import fails (Python version mismatch)
+**Solution**: Run inside Docker container, not on host
+
+### Docker /workspace/tpu-mlir is empty
+**Solution**: Mount local tpu-mlir: `-v /path/to/tpu-mlir:/workspace/tpu-mlir`
+
+### CVIMODEL results completely wrong
+**Solution**: Check input format — fuse_preprocess expects uint8 RGB NHWC, not float32 NCHW
 
 ## Key Points
 
 1. **YOLO26 pose/seg NOT supported** - Use YOLO11
 2. **Detection needs 6 alternating outputs** - Box, Class, Box, Class, Box, Class
 3. **BiSeNetv2 uses ImageNet preprocessing** - Different mean/scale from YOLO
-4. **Use scripts for conversion** - Don't manually run Docker commands
-5. **qtable for YOLO pose/seg** - Better accuracy with hybrid quantization
-6. **100+ calibration images** for production
+4. **Use `--quant_output` for ION-constrained devices** - Saves ~28MB, int8 argmax is equivalent
+5. **Mount local tpu-mlir into Docker** - Docker image has empty /workspace/tpu-mlir
+6. **CVIMODEL with fuse_preprocess expects uint8 RGB NHWC** - Not float32 NCHW
+7. **qtable for YOLO pose/seg** - Better accuracy with hybrid quantization
+8. **100+ calibration images** for production
+9. **Always validate** ONNX vs CVIMODEL pixel agreement after conversion
