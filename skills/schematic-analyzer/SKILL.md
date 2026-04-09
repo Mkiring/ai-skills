@@ -1,12 +1,12 @@
 ---
 name: schematic-analyzer
 description: |
-  Use when analyzing KiCad schematics (.kicad_sch) or Cadence OrCAD Capture XML exports (.xml),
+  Use when analyzing KiCad schematics (.kicad_sch) or Cadence OrCAD/Allegro schematics,
   identifying what a component or IC does, tracing nets, buses, signal paths, or power distribution,
   extracting subsystem topology, or reviewing hardware architecture for design review, BSP bring-up,
   or test planning. Trigger on requests about I2C/SPI/UART/USB buses, power trees, signal flow,
-  component roles, root schematic selection in hierarchical designs, Cadence OrCAD原理图, and
-  Chinese terms such as 原理图分析, 拓扑提取, 器件角色, 信号流, 电源树.
+  component roles, root schematic selection in hierarchical designs, and Chinese terms such as
+  原理图分析, 拓扑提取, 器件角色, 信号流, 电源树.
 
 compatibility:
   tools: [Read, Write, Glob, Grep, Bash]
@@ -18,7 +18,8 @@ compatibility:
 
 # Schematic Analyzer
 
-Analysis of KiCad schematics and Cadence OrCAD Capture XML exports via CLI tools.
+Analysis of KiCad schematics, or Cadence OrCAD/Allegro schematics (Allegro netlist pstxnet.dat/pstxprt.dat
+combined with OrCAD Capture XML export .xml) via CLI tools.
 Produces accurate answers—query what's needed for reliable conclusions, never dumps
 raw files, never guesses without grounding.
 
@@ -136,7 +137,7 @@ When determining interface mode or device configuration:
 ### Don't: Dump Raw Files
 
 ```
-❌ Read the entire .kicad_sch or Cadence XML file
+❌ Read the entire .kicad_sch, Cadence XML, or Allegro netlist files
 ❌ Paste full netlist into context
 ❌ Export all JSON and load into prompt
 ```
@@ -187,7 +188,7 @@ When determining interface mode or device configuration:
 
 For entry mode selection, reading loop, and detailed workflow, see [SCHEMATIC_STRATEGY.md](./SCHEMATIC_STRATEGY.md).
 
-**Never**: Dump full `.kicad_sch` files, Cadence XML files, netlists, or exported JSON into context.
+**Never**: Dump full `.kicad_sch` files, Cadence XML files, Allegro netlist files, or exported JSON into context.
 
 ---
 

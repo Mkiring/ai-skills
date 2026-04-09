@@ -1,10 +1,10 @@
 # Schematic Analyzer
 
-A Claude Code skill for analyzing KiCad schematics and Cadence OrCAD Capture XML exports with accuracy-first principles.
+A Claude Code skill for analyzing KiCad schematics and Cadence OrCAD/Allegro schematics with accuracy-first principles.
 
 ## Overview
 
-Schematic Analyzer helps you understand hardware designs by querying KiCad (.kicad_sch) and Cadence OrCAD Capture XML (.xml) schematic files directly, without dumping raw files into context. It provides structured JSON output for components, nets, pages, and subsystems.
+Schematic Analyzer helps you understand hardware designs by querying KiCad (.kicad_sch) and Cadence OrCAD/Allegro schematic files (Allegro netlist pstxnet.dat/pstxprt.dat combined with OrCAD Capture XML export .xml) directly, without dumping raw files into context. It provides structured JSON output for components, nets, pages, and subsystems.
 
 ## Key Features
 
@@ -66,7 +66,7 @@ schematic-analyzer/
 │   ├── schematic-cli.py  # Main CLI entry point
 │   ├── tools/
 │   │   ├── kicad/        # KiCad format parsers
-│   │   ├── cadence/      # Cadence OrCAD XML parsers
+│   │   ├── cadence/      # Cadence OrCAD/Allegro parsers (XML + DAT netlist)
 │   │   └── parser_factory.py  # Auto-detect format and dispatch
 │   └── requirements.txt  # Python dependencies
 ├── patterns/             # Pattern YAML examples (i2c, spi, uart, etc.)
@@ -87,10 +87,10 @@ schematic-analyzer/
 
 ## Supported Formats
 
-| Format | Extension | Notes |
-|--------|-----------|-------|
+| Format | Files Required | Notes |
+|--------|----------------|-------|
 | KiCad | `.kicad_sch` | Requires `kicad-cli` for netlist export |
-| Cadence OrCAD | `.xml` | Exported from OrCAD Capture via File → Export → XML. No external tools needed. |
+| Cadence OrCAD/Allegro | `pstxnet.dat` + `pstxprt.dat` + `.xml` | Allegro netlist (.dat) provides precise connectivity; OrCAD Capture XML export (.xml) provides component/page info. Both are needed together. |
 
 Format is auto-detected from file content.
 
@@ -100,7 +100,7 @@ Format is auto-detected from file content.
 
 - **Python 3.10+**
 - **KiCad CLI** - Required only for KiCad schematics (netlist export and connectivity analysis)
-  - Not needed for Cadence XML analysis
+  - Not needed for Cadence OrCAD/Allegro analysis
   - Linux: `kicad-cli` (installed with KiCad)
   - Windows: `kicad-cli.exe` (add KiCad install directory to PATH)
 
