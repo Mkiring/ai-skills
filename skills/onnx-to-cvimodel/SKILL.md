@@ -1,12 +1,16 @@
 ---
 name: onnx-to-cvimodel
-description: "Expert guide for converting YOLO models (YOLO11/YOLO26) from ONNX to CVIMODEL format for Sophgo CV181x TPU. Includes tested conversion scripts, quantization tables (qtables), and complete workflow documentation. Use when user needs to convert YOLO ONNX models to CVIMODEL, set up TPU-MLIR conversion pipeline, configure output names and quantization for YOLO models, or troubleshoot conversion issues."
+description: "Expert guide for converting ONNX models to CVIMODEL format for Sophgo CV181x TPU. Supports YOLO11/YOLO26 (detect, pose, seg, cls) and BiSeNetv2 (semantic segmentation). Includes tested conversion scripts, quantization tables (qtables), and complete workflow documentation. Use when user needs to convert ONNX models to CVIMODEL, set up TPU-MLIR conversion pipeline, configure output names and quantization, or troubleshoot conversion issues."
 license: Complete terms in LICENSE.txt
 ---
 
 # ONNX to CVIMODEL Conversion Guide
 
-This skill provides scripts, configurations, and guidance for converting YOLO models from ONNX to CVIMODEL format for Sophgo CV181x TPU (reCamera, SG200x).
+This skill provides scripts, configurations, and guidance for converting models from ONNX to CVIMODEL format for Sophgo CV181x TPU (reCamera, SG200x).
+
+Supported models:
+- **YOLO11/YOLO26**: detection, pose, segmentation, classification
+- **BiSeNetv2**: semantic segmentation (Cityscapes)
 
 The conversion process uses **TPU-MLIR** Docker environment and requires:
 - ONNX model file
@@ -40,7 +44,12 @@ python3 export_and_convert.py --model yolo11n --task detect
 ./convert_yolo26_cls.sh <onnx> <dataset>       # YOLO26 classification
 ```
 
-### 3. Batch Conversion
+### 3. BiSeNetv2 Semantic Segmentation
+```bash
+./convert_bisenetv2.sh <onnx> <dataset>      # BiSeNetv2 (INT8 + BF16)
+```
+
+### 4. Batch Conversion
 ```bash
 ./batch_convert_all.sh    # Convert all ONNX files in current directory
 ```
@@ -208,6 +217,40 @@ if __name__ == "__main__":
 | YOLO26n pose | Mod operation not supported | Use YOLO11n-pose |
 | YOLO26n seg | Mod operation not supported | Use YOLO11n-seg |
 
+## BiSeNetv2 Conversion
+
+BiSeNetv2 is a lightweight semantic segmentation model. It uses different preprocessing from YOLO models (ImageNet mean/scale instead of 0-1 normalization).
+
+### Key Differences from YOLO
+- **Input shape**: Non-square `[1,3,512,1024]` (H, W configurable via env vars)
+- **Preprocessing**: ImageNet mean/scale (`123.675,116.28,103.53` / `0.01712,0.01751,0.01743`)
+- **No `--keep_aspect_ratio`**: Fixed resolution input
+- **Dual output**: Produces both INT8 and BF16 CVIMODEL files
+
+### Usage
+```bash
+# Basic conversion
+./scripts/convert_bisenetv2.sh bisenetv2.onnx ./dataset
+
+# Custom resolution
+INPUT_H=256 INPUT_W=512 ./scripts/convert_bisenetv2.sh bisenetv2.onnx ./dataset
+
+# Custom model name
+MODEL_NAME=bisenetv2_custom ./scripts/convert_bisenetv2.sh bisenetv2.onnx ./dataset
+```
+
+### Environment Variables
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MODEL_NAME` | `bisenetv2_cityscapes` | Model name used in output filenames |
+| `CHIP` | `cv181x` | Target chip |
+| `INPUT_H` | `512` | Input height |
+| `INPUT_W` | `1024` | Input width |
+| `CALIBRATION_EPOCHS` | `20` | Number of calibration images |
+| `OUTPUT_NAME` | `preds` | ONNX output tensor name |
+| `MEAN` | `123.675,116.28,103.53` | ImageNet mean |
+| `SCALE` | `0.01712475,0.01750700,0.01742919` | ImageNet scale |
+
 ## Docker Command Template (Manual)
 
 ```bash
@@ -288,15 +331,17 @@ model_deploy.py ... --quantize_table yolo11n_pose_qtable \
 
 ## When to Use This Skill
 
-- User wants to convert YOLO models to CVIMODEL
+- User wants to convert YOLO or BiSeNetv2 models to CVIMODEL
 - User mentions reCamera, SG200x, CV181x
 - User needs quick conversion scripts
 - User asks about YOLO11 vs YOLO26 differences
+- User asks about semantic segmentation on CV181x
 
 ## Key Points
 
 1. **YOLO26 pose/seg NOT supported** - Use YOLO11
 2. **Detection needs 6 alternating outputs** - Box, Class, Box, Class, Box, Class
-3. **Use scripts for conversion** - Don't manually run Docker commands
-4. **qtable for pose/seg** - Better accuracy with hybrid quantization
-5. **100+ calibration images** for production
+3. **BiSeNetv2 uses ImageNet preprocessing** - Different mean/scale from YOLO
+4. **Use scripts for conversion** - Don't manually run Docker commands
+5. **qtable for YOLO pose/seg** - Better accuracy with hybrid quantization
+6. **100+ calibration images** for production

@@ -3,13 +3,14 @@
 > **Maintained by**: [LynnL4](https://github.com/LynnL4)
 > **License**: MIT
 
-Expert guidance skill for converting YOLO models (YOLO11/YOLO26) from ONNX to CVIMODEL format for Sophgo CV181x TPU platforms (reCamera, SG200x).
+Expert guidance skill for converting ONNX models to CVIMODEL format for Sophgo CV181x TPU platforms (reCamera, SG200x).
 
 ## Overview
 
 This skill provides practical scripts and tested configurations for:
 - YOLO11: detection, pose, segmentation, classification
 - YOLO26: detection, classification
+- BiSeNetv2: semantic segmentation (Cityscapes)
 - Hybrid quantization with qtable support
 - Ready-to-use conversion scripts
 
@@ -23,8 +24,11 @@ Current Version: **v1.0.0**
 |-------|-----------|------|--------------|----------------|
 | YOLO11 | ✅ | ✅ | ✅ | ✅ |
 | YOLO26 | ✅ | ❌ | ❌ | ✅ |
+| BiSeNetv2 | - | - | - | - |
 
 > **Note**: YOLO26 pose/seg are NOT supported (uses Mod operation not in TPU-MLIR)
+>
+> **Note**: BiSeNetv2 is a semantic segmentation model (19-class Cityscapes)
 
 ## Structure
 
@@ -42,7 +46,8 @@ onnx-to-cvimodel/
 │   ├── convert_yolo11_seg.sh       # YOLO11 segmentation
 │   ├── convert_yolo11_cls.sh       # YOLO11 classification
 │   ├── convert_yolo26_detect.sh    # YOLO26 detection
-│   └── convert_yolo26_cls.sh       # YOLO26 classification
+│   ├── convert_yolo26_cls.sh       # YOLO26 classification
+│   └── convert_bisenetv2.sh        # BiSeNetv2 semantic segmentation
 └── assets/               # Quantization tables
     ├── yolo11n_pose_qtable         # Pose hybrid quantization
     └── yolo11n_seg                 # Segmentation hybrid quantization
@@ -68,11 +73,14 @@ YOLO('yolo11n-seg.pt').export(format='onnx', imgsz=640, simplify=False, opset=12
 ### 2. Convert to CVIMODEL
 
 ```bash
-# Universal conversion
+# Universal conversion (YOLO models)
 ./scripts/convert_to_cvimodel.sh model.onnx dataset/
 
 # Task-specific conversion
 MODEL_TYPE=yolo11 TASK=pose ./scripts/convert_to_cvimodel.sh yolo11n-pose.onnx dataset/
+
+# BiSeNetv2 semantic segmentation
+./scripts/convert_bisenetv2.sh bisenetv2.onnx dataset/
 ```
 
 ### 3. Use Q-table for Better Accuracy
