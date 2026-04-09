@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
+REPO_ROOT = Path(__file__).absolute().parents[4]
 CLI_PATH = REPO_ROOT / ".claude/skills/schematic-analyzer/scripts/schematic-cli.py"
 DENALI_ROOT = REPO_ROOT / "data/denali/RK3576.kicad_sch"
 E1005_ROOT = REPO_ROOT / "data/E1005_v01"

@@ -4,7 +4,7 @@ from pathlib import Path
 import subprocess
 
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
+REPO_ROOT = Path(__file__).absolute().parents[4]
 SCRIPTS_ROOT = REPO_ROOT / ".claude/skills/schematic-analyzer/scripts"
 if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))

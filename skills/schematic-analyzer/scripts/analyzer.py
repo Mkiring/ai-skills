@@ -1203,14 +1203,18 @@ class SchematicAnalyzer:
 
     def _pin_name(self, component, pin_number: str, dat_source: bool = False) -> str:
         if dat_source:
-            # DAT source: CDS_PINID names are functional names, but plain numeric
-            # pin names from Format B still benefit from remap if available
+            # DAT source (pstxnet.dat): pin_number is a physical pin identifier
+            # that corresponds to the XML parser's pin "name" attribute,
+            # NOT the "number" attribute (which is a 0-based position index).
+            # For CDS_PINID names (e.g. "GPIO0"), they are already functional —
+            # no remap needed. For numeric pin ids, try remap via pin "name".
             name = str(pin_number)
-            # If the pin_number looks like a raw pad number, try to remap
-            if re.match(r'^\d+$', name):
-                for pin in component.pins:
-                    if str(pin.get("number", "")) == name:
-                        return str(pin.get("name", "") or name)
+            for pin in component.pins:
+                pin_name = str(pin.get("name", ""))
+                if pin_name == name:
+                    # Found exact match — return the pin name as-is
+                    # (it's already the meaningful identifier)
+                    return pin_name
             return name
         for pin in component.pins:
             if str(pin.get("number", "")) == str(pin_number):
