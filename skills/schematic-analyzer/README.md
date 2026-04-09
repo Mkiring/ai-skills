@@ -85,6 +85,35 @@ schematic-analyzer/
 - **pdf**: Used for reading datasheets when device-specific information is needed
 - **ee-datasheet-master**: Used for detailed datasheet analysis (pin functions, electrical specs, device-specific behavior)
 
+## Datasheet Preparation
+
+Schematic analysis often requires datasheets for core components (MCU, PMIC, transceiver, etc.) to determine pin functions, electrical specs, and device-specific behavior. Place datasheets under a shared `datasheets/` directory at the project root, with filenames containing the **MPN (Manufacturer Part Number)** for easy discovery. Multiple schematics can share the same datasheet library.
+
+### Recommended Project Structure
+
+```
+project/
+├── datasheets/                    # Shared datasheet library
+│   ├── RK3576_Datasheet_V1.2.pdf
+│   ├── BQ25895_Datasheet.pdf
+│   └── ESP32-S3_Datasheet.pdf
+├── E1005/                         # KiCad schematic
+│   └── E1005.kicad_sch
+├── Denali/                        # Cadence OrCAD/Allegro schematic
+│   ├── denali.xml                 # OrCAD Capture XML export
+│   └── netlist/                   # Allegro netlist directory
+│       ├── pstxnet.dat
+│       └── pstxprt.dat
+└── E1005_v02/                     # Another version
+    └── E1005.kicad_sch
+```
+
+### Naming Convention
+
+- **Required**: Filename must contain the MPN (e.g., `RK3576`, `BQ25895`, `ESP32-S3`)
+- **Recommended**: `MPN_Datasheet[_Version].pdf` format
+- **Purpose**: Enables the skill to locate datasheets by MPN when escalation to `ee-datasheet-master` is needed
+
 ## Supported Formats
 
 | Format | Files Required | Notes |
