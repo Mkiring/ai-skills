@@ -31,28 +31,6 @@ To use a skill from this repository:
 
 Important: using a skill is not just copying skill files. Many skills also require extra tools, Python packages, SDKs, Docker images, KiCad CLI, or MCP services. The dependency and environment setup must be completed from that skill's own `README.md` before use.
 
-### Claude Code Plugin (Recommended)
-
-```bash
-# 1. Clone this repository
-git clone https://github.com/Seeed-Studio/ai-skills.git
-cd ai-skills
-
-# 2. Register as a local marketplace
-claude plugin marketplace add "$(pwd)"
-
-# 3. Install the plugin
-claude plugin install seeed-ai-skills
-
-# 4. Enable the plugin
-claude plugin enable seeed-ai-skills@seeed-ai-skills
-
-# 5. Verify
-claude plugin list
-```
-
-This installs all 4 skills at once: **schematic-analyzer**, **ee-datasheet-master**, **onnx-to-cvimodel**, **cv181x-media**.
-
 ### Skill-Specific Setup
 
 After installing a skill, open its README and complete its dependency setup before using it:
