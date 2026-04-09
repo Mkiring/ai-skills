@@ -101,7 +101,7 @@ cp ~/.claude/skills/skills/onnx-to-cvimodel/assets/yolo11n_seg ./
 | YOLO11n cls | 10.8 MB | 3.0 MB | `./scripts/convert_yolo11_cls.sh yolo11n-cls.onnx dataset/` |
 | YOLO26n detect | 9.4 MB | 2.9 MB | `./scripts/convert_yolo26_detect.sh yolo26n.onnx dataset/` |
 | YOLO26n cls | 11.3 MB | 3.0 MB | `./scripts/convert_yolo26_cls.sh yolo26n-cls.onnx dataset/` |
-| BiSeNetv2 seg | - | - | `./scripts/convert_bisenetv2.sh bisenetv2.onnx dataset/` |
+| BiSeNetv2 seg | 13 MB | 6.0 MB (INT8) / 14 MB (BF16) | `./scripts/convert_bisenetv2.sh bisenetv2.onnx dataset/` |
 
 ## Requirements
 
