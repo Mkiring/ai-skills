@@ -199,6 +199,13 @@ if __name__ == "__main__":
 --quantize_table yolo11n_pose_qtable
 ```
 
+### BiSeNetv2 Segmentation
+```bash
+--output_names preds
+--input_shapes [[1,3,512,1024]]
+--mean 123.675,116.28,103.53 --scale 0.01712475,0.01750700,0.01742919
+```
+
 ## Tested & Working Conversions
 
 | Model | ONNX Size | CVIMODEL Size | Command |
@@ -209,6 +216,7 @@ if __name__ == "__main__":
 | YOLO11n cls | 10.8 MB | 3.0 MB | `./convert_yolo11_cls.sh yolo11n-cls.onnx dataset/` |
 | YOLO26n detect | 9.4 MB | 2.9 MB | `./convert_yolo26_detect.sh yolo26n.onnx dataset/` |
 | YOLO26n cls | 11.3 MB | 3.0 MB | `./convert_yolo26_cls.sh yolo26n-cls.onnx dataset/` |
+| BiSeNetv2 seg | - | - | `./convert_bisenetv2.sh bisenetv2.onnx dataset/` |
 
 ## Not Supported
 
@@ -219,7 +227,7 @@ if __name__ == "__main__":
 
 ## BiSeNetv2 Conversion
 
-BiSeNetv2 is a lightweight semantic segmentation model. It uses different preprocessing from YOLO models (ImageNet mean/scale instead of 0-1 normalization).
+BiSeNetv2 is a lightweight segmentation model. It uses different preprocessing from YOLO models (ImageNet mean/scale instead of 0-1 normalization).
 
 ### Key Differences from YOLO
 - **Input shape**: Non-square `[1,3,512,1024]` (H, W configurable via env vars)
