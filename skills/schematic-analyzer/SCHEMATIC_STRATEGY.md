@@ -2,7 +2,7 @@
 
 ## Mission
 
-This document defines how an LLM should read KiCad schematics using the schematic-analyzer CLI tools.
+This document defines how an LLM should read KiCad schematics and Cadence OrCAD/Allegro schematics using the schematic-analyzer CLI tools.
 
 **Goal**: Produce accurate answers to user questions—query what's needed for reliable conclusions, never dump raw files, never guess without grounding.
 

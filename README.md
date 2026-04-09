@@ -13,7 +13,7 @@ This repository collects and maintains AI skill libraries for Seeed products, pr
   > - **Specialized for EE**: Understands electrical specs, I2C addresses, timing diagrams, register maps
   > - **Verified extraction**: Tested on 1000+ datasheets with 100% text extraction success
 
-- **[schematic-analyzer](skills/schematic-analyzer/README.md)** - KiCad and Cadence OrCAD schematic analysis with accuracy-first principles, providing structured JSON output for components, nets, pages, and subsystems
+- **[schematic-analyzer](skills/schematic-analyzer/README.md)** - KiCad and Cadence OrCAD/Allegro schematic analysis with accuracy-first principles, providing structured JSON output for components, nets, pages, and subsystems *(requires: pdf, ee-datasheet-master skills, pcbparts MCP)*
 
 - **[onnx-to-cvimodel](skills/onnx-to-cvimodel/README.md)** - ONNX to CVIMODEL conversion guide for YOLO models on Sophgo CV181x TPU, with ready-to-use scripts and tested configurations for YOLO11/YOLO26 (detect/pose/seg/cls)
 
