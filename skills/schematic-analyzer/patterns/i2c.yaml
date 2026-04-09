@@ -1,0 +1,27 @@
+name: I2C
+category: bus
+description: "Detect simple I2C buses from explicit runtime pattern input."
+
+signals:
+  - role: scl
+    patterns:
+      - "(?i)(?:^|/)I2C.*SCL$"
+      - "(?i)^SCL$"
+    required: true
+    group_key: true
+  - role: sda
+    patterns:
+      - "(?i)(?:^|/)I2C.*SDA$"
+      - "(?i)^SDA$"
+    required: true
+    group_key: true
+
+controller:
+  detect_by: core_component
+
+participants:
+  filter:
+    - reference_prefix: ["R", "C", "L", "D", "TP", "FB"]
+  exclude_controller: false
+
+extra_fields: {}
