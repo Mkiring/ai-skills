@@ -268,4 +268,23 @@ class EvidenceExtractor:
         return (self.root_schematic.parent / sheet_info.sheet_file).resolve()
 
     def _is_passive(self, reference: str) -> bool:
-        return str(reference or "").upper().startswith(("R", "C", "L", "D", "TP", "FB"))
+        """Check if a component is passive based on reference prefix.
+
+        Covers common passive component prefixes:
+        R: Resistor, RN: Resistor network
+        C: Capacitor, CP: Polarized capacitor
+        L: Inductor, FB: Ferrite bead
+        D: Diode, LED, TVS
+        TP: Test point
+        Y/X: Crystal / oscillator
+        T: Transformer
+        JP/J: Jumper
+        """
+        ref = str(reference or "").upper()
+        # Multi-char prefixes first (to avoid RN matching R)
+        if ref.startswith(("RN", "CP", "FB", "TP", "LED", "JP")):
+            return True
+        # Single-char prefixes
+        if ref and ref[0] in ("R", "C", "L", "D", "Y", "X", "T", "J"):
+            return True
+        return False

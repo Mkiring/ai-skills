@@ -580,11 +580,7 @@ class SchematicAnalyzer:
             )
         except StopIteration:
             # For Cadence with pstxprt.dat, extract page number from sheet_path
-            if sheet_path.startswith("page"):
-                try:
-                    page_index = int(sheet_path[4:])  # "page9" -> 9
-                except ValueError:
-                    page_index = 1
+            page_index = self._extract_page_index(sheet_path)
 
         nets: list[dict[str, str]] = []
         seen_net_pairs: set[tuple[str, str]] = set()
@@ -1207,12 +1203,45 @@ class SchematicAnalyzer:
 
     def _pin_name(self, component, pin_number: str, dat_source: bool = False) -> str:
         if dat_source:
-            # DAT pin keys are already CDS_PINID functional names; skip remap
-            return str(pin_number)
+            # DAT source: CDS_PINID names are functional names, but plain numeric
+            # pin names from Format B still benefit from remap if available
+            name = str(pin_number)
+            # If the pin_number looks like a raw pad number, try to remap
+            if re.match(r'^\d+$', name):
+                for pin in component.pins:
+                    if str(pin.get("number", "")) == name:
+                        return str(pin.get("name", "") or name)
+            return name
         for pin in component.pins:
             if str(pin.get("number", "")) == str(pin_number):
                 return str(pin.get("name", "") or pin_number)
         return str(pin_number)
+
+    @staticmethod
+    def _extract_page_index(sheet_path: str) -> int:
+        """Extract page index from various sheet_path formats.
+
+        Supports:
+        - "pageN" (pstxprt.dat P_PATH)
+        - "page_N" / "PAGE.N" (alternative naming)
+        - "/N" (simple numeric path)
+        - "/Page_Name" (named path — returns 1)
+        """
+        import re as _re
+        if not sheet_path or sheet_path == "/":
+            return 1
+
+        # "pageN" or "PageN"
+        m = _re.search(r'[Pp][Aa][Gg][Ee][_\.]?(\d+)', sheet_path)
+        if m:
+            return int(m.group(1))
+
+        # Pure numeric path like "/3"
+        m = _re.search(r'^/(\d+)$', sheet_path)
+        if m:
+            return int(m.group(1))
+
+        return 1
 
     def _suggest_closest_ref(self, ref: str) -> str | None:
         """Find closest component reference by prefix match."""
