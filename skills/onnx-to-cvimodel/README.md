@@ -18,7 +18,7 @@ This skill provides practical scripts and tested configurations for:
 
 ## Version
 
-Current Version: **v2.0.0**
+Current Version: **v2.1.0**
 
 ## What's Supported
 
@@ -27,6 +27,7 @@ Current Version: **v2.0.0**
 | YOLO11 | OK | OK | OK | OK |
 | YOLO26 | OK | -- (Mod not supported) | -- (Mod not supported) | OK |
 | BiSeNetv2 | - | - | Semantic Seg (19-class Cityscapes) | - |
+| PP-LiteSeg | - | - | Semantic Seg (19-class Cityscapes) | - |
 
 ## Structure
 
@@ -46,6 +47,7 @@ onnx-to-cvimodel/
 |   +-- convert_yolo26_detect.sh    # YOLO26 detection
 |   +-- convert_yolo26_cls.sh       # YOLO26 classification
 |   +-- convert_bisenetv2.sh        # BiSeNetv2 semantic segmentation
+|   +-- convert_ppliteseg.sh        # PP-LiteSeg semantic segmentation
 |   +-- validate_conversion.py      # ONNX vs CVIMODEL validation
 +-- assets/
     +-- yolo11n_pose_qtable         # Pose hybrid quantization
@@ -71,6 +73,9 @@ YOLO('yolo11n-seg.pt').export(format='onnx', imgsz=640, simplify=False, opset=12
 
 # BiSeNetv2 (produces INT8 + BF16 + INT8_quant_output)
 ./scripts/convert_bisenetv2.sh bisenetv2.onnx dataset/
+
+# PP-LiteSeg (ONNX graph surgery + INT8 + INT8_quant_output)
+./scripts/convert_ppliteseg.sh pp_liteseg.onnx dataset/
 ```
 
 ### 3. Validate Conversion
@@ -97,6 +102,11 @@ CV181x ION memory is shared (~60MB total). Use `--quant_output` to keep int8 out
 | INT8 (float32 output) | 6.0 MB | 62.89 MB |
 | **INT8 (--quant_output)** | **5.9 MB** | **34.27 MB** |
 
+| PP-LiteSeg Variant | Model Size | ION Memory |
+|--------------------|-----------|------------|
+| INT8 (float32 output) | 10.3 MB | 59.00 MB |
+| **INT8 (--quant_output)** | **9.8 MB** | **26.73 MB** |
+
 ## BiSeNetv2 Validation Results
 
 | Metric | Value |
@@ -108,6 +118,18 @@ CV181x ION memory is shared (~60MB total). Use `--quant_output` to keep int8 out
 | car IoU | 0.9161 |
 | Device inference (CV181x) | **436ms** (pre:2 + infer:276 + post:158) |
 
+## PP-LiteSeg Validation Results
+
+| Metric | Value |
+|--------|-------|
+| Pixel agreement (image 1) | 92.40% |
+| Pixel agreement (image 2) | 96.24% |
+| Avg agreement | **94.32%** |
+| road IoU | 0.9905 / 0.9520 |
+| building IoU | 0.8785 / 0.9654 |
+| car IoU | 0.7909 / 0.9328 |
+| ION memory (int8_qout) | **26.73 MB** |
+
 ## Key Pitfalls (Learned from Production)
 
 1. **Mount local tpu-mlir** - Docker image has empty /workspace/tpu-mlir
@@ -115,6 +137,8 @@ CV181x ION memory is shared (~60MB total). Use `--quant_output` to keep int8 out
 3. **Use --quant_output** for ION-constrained devices
 4. **int8 argmax is valid** - uniform quantization preserves relative ordering
 5. **Validate after conversion** - always check pixel agreement
+6. **PP-LiteSeg needs ONNX graph surgery** - Remove ArgMax/Cast, fix AveragePool, pre-simplify locally (not in Docker)
+7. **Use RGB_PACKED for sscma-model** - sscma-model feeds HWC packed data
 
 ## Requirements
 

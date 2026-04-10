@@ -1,6 +1,6 @@
 ---
 name: onnx-to-cvimodel
-description: "Expert guide for converting ONNX models to CVIMODEL format for Sophgo CV181x TPU. Supports YOLO11/YOLO26 (detect, pose, seg, cls) and BiSeNetv2 (semantic segmentation). Includes tested conversion scripts, quantization tables (qtables), ION memory optimization (--quant_output), validation workflow, and complete documentation. Use when user needs to convert ONNX models to CVIMODEL, set up TPU-MLIR conversion pipeline, configure output names and quantization, optimize ION memory usage, validate conversion accuracy, or troubleshoot conversion issues."
+description: "Expert guide for converting ONNX models to CVIMODEL format for Sophgo CV181x TPU. Supports YOLO11/YOLO26 (detect, pose, seg, cls), BiSeNetv2 (semantic segmentation), and PP-LiteSeg (semantic segmentation). Includes tested conversion scripts, quantization tables (qtables), ION memory optimization (--quant_output), validation workflow, and complete documentation. Use when user needs to convert ONNX models to CVIMODEL, set up TPU-MLIR conversion pipeline, configure output names and quantization, optimize ION memory usage, validate conversion accuracy, or troubleshoot conversion issues."
 compatibility: Requires Docker, the sophgo/tpuc_dev:v3.1 image, a local TPU-MLIR installation, an ONNX model, and a calibration dataset.
 license: Complete terms in LICENSE.txt
 ---
@@ -32,6 +32,7 @@ If conversion completes but ONNX vs CVIMODEL validation was not run, do not desc
 Supported models:
 - **YOLO11/YOLO26**: detection, pose, segmentation, classification
 - **BiSeNetv2**: semantic segmentation (Cityscapes)
+- **PP-LiteSeg**: semantic segmentation (Cityscapes)
 
 The conversion process uses **TPU-MLIR** Docker environment and requires:
 - ONNX model file
@@ -70,6 +71,15 @@ python3 export_and_convert.py --model yolo11n --task detect
 ./convert_bisenetv2.sh <onnx> <dataset>              # BiSeNetv2 (INT8 + BF16 + INT8_quant_output)
 ```
 
+### 4. PP-LiteSeg Semantic Segmentation
+```bash
+./convert_ppliteseg.sh <onnx> <dataset>              # PP-LiteSeg (INT8 + INT8_quant_output)
+```
+PP-LiteSeg requires ONNX graph surgery before conversion (handled automatically by the script):
+- Removes ArgMax + Cast nodes (keeps pre-argmax logits)
+- Fixes AveragePool `count_include_pad` (0 → 1, cv181x requirement)
+- Pre-simplifies with local onnxsim (avoids Docker onnxsim Squeeze bug)
+
 ### 4. Batch Conversion
 ```bash
 ./batch_convert_all.sh    # Convert all ONNX files in current directory
@@ -104,6 +114,11 @@ model_deploy.py ... --quantize INT8 --quant_output --model model_int8_qout.cvimo
 | BF16 | 14 MB | 87.59 MB | float32 |
 | INT8 (no --quant_output) | 6.0 MB | 62.89 MB | float32 |
 | **INT8 (--quant_output)** | **5.9 MB** | **34.27 MB** | **int8** |
+
+| PP-LiteSeg Variant | Model Size | ION Memory | Output Type |
+|--------------------|-----------|------------|-------------|
+| INT8 (no --quant_output) | 10.3 MB | 59.00 MB | float32 |
+| **INT8 (--quant_output)** | **9.8 MB** | **26.73 MB** | **int8** |
 
 ## Critical: Docker tpu-mlir Mount
 
@@ -191,6 +206,27 @@ Quantization errors are concentrated at:
 - Small object edges (pole, traffic sign) — expected INT8 precision loss
 - Class boundaries — normal quantization artifacts
 
+### PP-LiteSeg Cityscapes (Full Validation)
+
+| Metric | Value |
+|--------|-------|
+| ONNX → CVIMODEL pixel agreement | **92.40%** (image 1), **96.24%** (image 2) |
+| Avg agreement | **94.32%** |
+| road IoU | 0.9905 / 0.9520 |
+| building IoU | 0.8785 / 0.9654 |
+| car IoU | 0.7909 / 0.9328 |
+| vegetation IoU | 0.9083 / 0.4895 |
+| sidewalk IoU | 0.9458 |
+| ION memory (int8) | 59.00 MB |
+| **ION memory (int8_qout)** | **26.73 MB** |
+
+PP-LiteSeg has lower pixel agreement than BiSeNetV2 (94% vs 98%) due to:
+- Larger input resolution (512x1024 vs 256x512) → more boundary pixels
+- Different model architecture (PMLiteSeg uses SPM+UAFM vs BiSeNetV2's Bilateral)
+- Quantization errors more visible at small object edges (fence, person)
+
+**Recommendation**: Use `--quant_output` variant (26.73 MB ION) — standard INT8 (59 MB) is near the cv181x ~60MB ION limit.
+
 ### YOLO Series
 
 | Model | ONNX Size | CVIMODEL Size | Command |
@@ -202,6 +238,7 @@ Quantization errors are concentrated at:
 | YOLO26n detect | 9.4 MB | 2.9 MB | `./convert_yolo26_detect.sh yolo26n.onnx dataset/` |
 | YOLO26n cls | 11.3 MB | 3.0 MB | `./convert_yolo26_cls.sh yolo26n-cls.onnx dataset/` |
 | BiSeNetv2 seg | 13 MB | 5.9 MB (INT8_qout) | `./convert_bisenetv2.sh bisenetv2.onnx dataset/` |
+| PP-LiteSeg seg | 32 MB | 9.8 MB (INT8_qout) | `./convert_ppliteseg.sh pp_liteseg.onnx dataset/` |
 
 ## Model-Specific Output Names (Copy & Paste)
 
@@ -232,6 +269,14 @@ Quantization errors are concentrated at:
 --input_shapes [[1,3,512,1024]]
 --mean 123.675,116.28,103.53 --scale 0.01712475,0.01750700,0.01742919
 ```
+
+### PP-LiteSeg Segmentation
+```bash
+--output_names p2o.pd_op.bilinear_interp.6.0
+--input_shapes [[1,3,512,1024]]
+--mean 123.675,116.28,103.53 --scale 0.01712475,0.01750700,0.01742919
+```
+PP-LiteSeg ONNX graph surgery required (see PP-LiteSeg Conversion Details below).
 
 ## BiSeNetv2 Conversion Details
 
@@ -267,6 +312,82 @@ MODEL_NAME=bisenetv2_custom ./scripts/convert_bisenetv2.sh bisenetv2.onnx ./data
 | `MEAN` | `123.675,116.28,103.53` | ImageNet mean |
 | `SCALE` | `0.01712475,0.01750700,0.01742919` | ImageNet scale |
 | `QUANT_OUTPUT` | `true` | Whether to generate --quant_output variant |
+
+## PP-LiteSeg Conversion Details
+
+PP-LiteSeg is a PaddlePaddle lightweight semantic segmentation model. It requires ONNX graph surgery before TPU-MLIR conversion.
+
+### Required ONNX Graph Surgery
+
+PP-LiteSeg ONNX has these issues that must be fixed:
+
+1. **Remove ArgMax + Cast nodes**: Original output is `[1, H, W] int32` (post-argmax label map). TPU-MLIR needs `[1, 19, H, W] float32` pre-argmax logits. Remove the last ArgMax and Cast nodes, expose the preceding Resize (bilinear_interp) output.
+
+2. **Fix AveragePool `count_include_pad`**: PP-LiteSeg has 5 AveragePool ops with `count_include_pad=0`, but cv181x hardware requires `count_include_pad=1`. Change all 5 to `=1`. Impact: minimal (< 0.01% pixel difference).
+
+3. **Pre-simplify with local onnxsim**: Docker's onnxsim (inside `sophgo/tpuc_dev:v3.1`) introduces broken Squeeze ops. Run onnxsim locally (`pip install onnxsim`) before feeding to Docker. **Do NOT run onnxsim inside Docker.**
+
+```python
+# Graph surgery (automated by convert_ppliteseg.sh)
+import onnx, onnxsim
+from onnx import TensorProto, helper
+
+model = onnx.load("pp_liteseg.onnx")
+
+# 1. Find last Resize output name
+resize_out = None
+for node in model.graph.node:
+    if node.op_type == 'Resize':
+        resize_out = node.output[0]
+
+# 2. Add as new graph output
+new_out = helper.make_tensor_value_info(resize_out, TensorProto.FLOAT, [1, 19, 512, 1024])
+model.graph.output.insert(0, new_out)
+
+# 3. Simplify LOCALLY (not in Docker)
+model, check = onnxsim.simplify(model, test_input_shapes={'x': [1, 3, 512, 1024]})
+
+# 4. Fix AveragePool count_include_pad
+for node in model.graph.node:
+    if node.op_type == 'AveragePool':
+        for attr in node.attribute:
+            if attr.name == 'count_include_pad':
+                attr.i = 1
+
+onnx.save(model, "pp_liteseg_prepared.onnx")
+```
+
+### Usage
+```bash
+# Basic conversion (produces int8 + int8_qout variants)
+./scripts/convert_ppliteseg.sh pp_liteseg.onnx ./dataset
+
+# Custom resolution
+INPUT_H=256 INPUT_W=512 ./scripts/convert_ppliteseg.sh pp_liteseg.onnx ./dataset
+```
+
+### Environment Variables
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MODEL_NAME` | `pp_liteseg` | Model name |
+| `CHIP` | `cv181x` | Target chip |
+| `INPUT_H` | `512` | Input height |
+| `INPUT_W` | `1024` | Input width |
+| `CALIBRATION_EPOCHS` | `20` | Calibration images |
+| `MEAN` | `123.675,116.28,103.53` | ImageNet mean |
+| `SCALE` | `0.01712475,0.01750700,0.01742919` | ImageNet scale |
+| `QUANT_OUTPUT` | `true` | Generate int8 output variant |
+
+### sscma-model Compatibility
+
+PP-LiteSeg cvimodel is detected as `MA_MODEL_TYPE_BISENETV2` (type 17) by sscma-model. The BiSeNetV2 postprocessor handles both int8 and float32 outputs via argmax, so PP-LiteSeg works directly with sscma-model:
+
+```bash
+# On device (RGB_PACKED format, sscma-model feeds HWC packed data)
+sscma-model pp_liteseg_int8_qout.cvimodel input.jpg result.jpg
+```
+
+**Important**: Use `RGB_PACKED` (not `RGB_PLANAR`) format. sscma-model always feeds HWC packed data via `rgb888_to_rgb888()`.
 
 ## Docker Command Template (Manual)
 
@@ -340,6 +461,14 @@ model_deploy.py ... --quantize_table yolo11n_pose_qtable \
 
 ## Troubleshooting
 
+Error: `operand xxx not found` during model_transform
+Cause: Docker's onnxsim introduces broken Squeeze ops when simplifying PP-LiteSeg.
+Solution: Pre-simplify ONNX with local onnxsim (`pip install onnxsim`) before Docker conversion.
+
+Error: `AvgPooling2d: assertion count_include_pad=true` during model_deploy
+Cause: PP-LiteSeg has AveragePool with `count_include_pad=0`, but cv181x requires `=1`.
+Solution: Fix all AveragePool nodes in ONNX before conversion (automated by `convert_ppliteseg.sh`).
+
 Error: `Op not support: Mod`
 Cause: YOLO26 pose or segmentation uses the `Mod` operator, which is not supported here.
 Solution: Use YOLO11 for pose or segmentation instead.
@@ -368,14 +497,21 @@ Error: CVIMODEL results are completely wrong
 Cause: Input preprocessing is mismatched.
 Solution: Check that `fuse_preprocess` is receiving uint8 RGB NHWC input, not float32 NCHW.
 
+Error: Device output is bbox-style instead of segmentation
+Cause: cvimodel uses `RGB_PLANAR` format but sscma-model feeds HWC packed data.
+Solution: Re-convert with `--customization_format RGB_PACKED`. sscma-model always feeds HWC data via `rgb888_to_rgb888()`.
+
 ## Key Points
 
 1. **YOLO26 pose/seg NOT supported** - Use YOLO11
 2. **Detection needs 6 alternating outputs** - Box, Class, Box, Class, Box, Class
 3. **BiSeNetv2 uses ImageNet preprocessing** - Different mean/scale from YOLO
-4. **Use `--quant_output` for ION-constrained devices** - Saves ~28MB, int8 argmax is equivalent
-5. **Mount local tpu-mlir into Docker** - Docker image has empty /workspace/tpu-mlir
-6. **CVIMODEL with fuse_preprocess expects uint8 RGB NHWC** - Not float32 NCHW
-7. **qtable for YOLO pose/seg** - Better accuracy with hybrid quantization
-8. **100+ calibration images** for production
-9. **Always validate** ONNX vs CVIMODEL pixel agreement after conversion
+4. **PP-LiteSeg requires ONNX graph surgery** - Remove ArgMax/Cast, fix AveragePool, pre-simplify locally
+5. **PP-LiteSeg: do NOT run onnxsim inside Docker** - Local onnxsim only, Docker's version has Squeeze bug
+6. **Use `--quant_output` for ION-constrained devices** - PP-LiteSeg: 59MB→27MB, BiSeNetV2: 63MB→34MB
+7. **Use `RGB_PACKED` for sscma-model compatibility** - sscma-model feeds HWC packed data
+8. **Mount local tpu-mlir into Docker** - Docker image has empty /workspace/tpu-mlir
+9. **CVIMODEL with fuse_preprocess expects uint8 RGB NHWC** - Not float32 NCHW
+10. **qtable for YOLO pose/seg** - Better accuracy with hybrid quantization
+11. **100+ calibration images** for production
+12. **Always validate** ONNX vs CVIMODEL pixel agreement after conversion
