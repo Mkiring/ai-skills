@@ -1,12 +1,33 @@
 ---
 name: onnx-to-cvimodel
 description: "Expert guide for converting ONNX models to CVIMODEL format for Sophgo CV181x TPU. Supports YOLO11/YOLO26 (detect, pose, seg, cls) and BiSeNetv2 (semantic segmentation). Includes tested conversion scripts, quantization tables (qtables), ION memory optimization (--quant_output), validation workflow, and complete documentation. Use when user needs to convert ONNX models to CVIMODEL, set up TPU-MLIR conversion pipeline, configure output names and quantization, optimize ION memory usage, validate conversion accuracy, or troubleshoot conversion issues."
+compatibility: Requires Docker, the sophgo/tpuc_dev:v3.1 image, a local TPU-MLIR installation, an ONNX model, and a calibration dataset.
 license: Complete terms in LICENSE.txt
 ---
 
 # ONNX to CVIMODEL Conversion Guide
 
 This skill provides scripts, configurations, and guidance for converting models from ONNX to CVIMODEL format for Sophgo CV181x TPU (reCamera, SG200x).
+
+## Instructions
+
+### Step 1: Confirm the required environment
+
+Before suggesting or running conversion commands, require:
+- Docker
+- The `sophgo/tpuc_dev:v3.1` image
+- A local TPU-MLIR installation mounted into the container
+- An ONNX model file
+- A calibration dataset
+
+If a required dependency or input is missing:
+- Stop before claiming conversion can proceed
+- State exactly what is missing
+- Tell the user the skill may be installed, but the current task is blocked until that requirement is provided
+
+### Step 2: Treat missing validation as unresolved
+
+If conversion completes but ONNX vs CVIMODEL validation was not run, do not describe the model as verified.
 
 Supported models:
 - **YOLO11/YOLO26**: detection, pose, segmentation, classification
@@ -317,29 +338,35 @@ model_deploy.py ... --quantize_table yolo11n_pose_qtable \
 | YOLO26n seg | Mod operation not supported | Use YOLO11n-seg |
 | ONNX TopK/Argmax ops | Not supported in TPU-MLIR | Post-process on CPU instead |
 
-## Common Issues
+## Troubleshooting
 
-### "Op not support: Mod"
-**Problem**: YOLO26 pose/seg uses Mod operation
-**Solution**: Use YOLO11 instead
+Error: `Op not support: Mod`
+Cause: YOLO26 pose or segmentation uses the `Mod` operator, which is not supported here.
+Solution: Use YOLO11 for pose or segmentation instead.
 
-### "model_transform: command not found"
-**Solution**: `source /workspace/tpu-mlir/envsetup.sh`
+Error: `model_transform: command not found`
+Cause: TPU-MLIR environment was not initialized.
+Solution: Run `source /workspace/tpu-mlir/envsetup.sh` inside the container.
 
-### Wrong output order
-**Solution**: For detection, outputs MUST be alternating (Box, Class, Box, Class...)
+Error: Wrong output order or unusable detection results
+Cause: Detection outputs are not provided in the expected alternating order.
+Solution: For detection models, ensure outputs are alternating `Box, Class, Box, Class, Box, Class`.
 
-### ION memory exceeds budget
-**Solution**: Add `--quant_output` to keep int8 output, saves ~28MB for typical segmentation models
+Error: ION memory exceeds budget
+Cause: INT8 output was dequantized to float32 or the chosen variant uses too much memory.
+Solution: Add `--quant_output` when downstream logic only needs relative ordering.
 
-### pymlir import fails (Python version mismatch)
-**Solution**: Run inside Docker container, not on host
+Error: `pymlir` import fails
+Cause: Host Python environment does not match the expected TPU-MLIR runtime.
+Solution: Run the workflow inside the Docker container instead of on the host.
 
-### Docker /workspace/tpu-mlir is empty
-**Solution**: Mount local tpu-mlir: `-v /path/to/tpu-mlir:/workspace/tpu-mlir`
+Error: `/workspace/tpu-mlir` is empty inside Docker
+Cause: Local TPU-MLIR was not mounted into the container.
+Solution: Mount it explicitly with `-v /path/to/tpu-mlir:/workspace/tpu-mlir`.
 
-### CVIMODEL results completely wrong
-**Solution**: Check input format — fuse_preprocess expects uint8 RGB NHWC, not float32 NCHW
+Error: CVIMODEL results are completely wrong
+Cause: Input preprocessing is mismatched.
+Solution: Check that `fuse_preprocess` is receiving uint8 RGB NHWC input, not float32 NCHW.
 
 ## Key Points
 

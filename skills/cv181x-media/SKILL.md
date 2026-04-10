@@ -1,10 +1,29 @@
 ---
 name: cv181x-media
 description: "Expert guide for CV181X/CV182X/CV180X (SG200X) multimedia development using CVI MPI API. Use this skill when working with: VI (video input/camera/ISP), VPSS (video processing/scaling/crop), VENC (H.264/H.265/JPEG encoding), VDEC (decoding), VB (video buffer pools), SYS binding, or any CVI_* API calls. Covers camera pipeline setup, offline VPSS processing, VB pool planning, and error diagnosis (ERR_VPSS_NOBUF, ERR_VB_NOBUF). API details in references/."
+compatibility: Best used with access to the target SDK headers or samples, the target chip or board model, and relevant runtime logs when debugging.
 version: 2.3.0
 ---
 
 # CV181X/CV182X/CV180X Multimedia Skill
+
+## Instructions
+
+### Step 1: Confirm the missing context before giving exact API guidance
+
+When the user asks about exact API behavior, limits, struct fields, or error diagnosis, first confirm the available context:
+- Target chip or board model
+- SDK version or SDK source tree path
+- Relevant code snippet, pipeline stage, or runtime log
+
+If required context is missing:
+- State that the answer is limited or provisional
+- Ask for the specific missing artifact needed to verify the claim
+- Do not present SDK-version-specific behavior as universal unless it is confirmed in the available references
+
+### Step 2: Prefer authoritative sources
+
+Use the source order already defined in this skill: SDK headers first, SDK samples second, external material only if it is verified against the headers or samples
 
 ## Complete Reference Index
 

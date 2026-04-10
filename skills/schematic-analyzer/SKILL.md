@@ -8,12 +8,7 @@ description: |
   component roles, root schematic selection in hierarchical designs, and Chinese terms such as
   原理图分析, 拓扑提取, 器件角色, 信号流, 电源树.
 
-compatibility:
-  tools: [Read, Write, Glob, Grep, Bash]
-  dependencies: [python3]
-  optional_dependencies: [kicad-cli]
-  skills: [pdf, ee-datasheet-master]
-  optional_mcp: [pcbparts]
+compatibility: Requires python3. KiCad projects also require kicad-cli on PATH. Optional but often needed: pcbparts MCP, pdf skill, and ee-datasheet-master.
 ---
 
 # Schematic Analyzer
@@ -30,6 +25,36 @@ Accuracy first, efficiency second.
 Choose mode first, query what's needed for reliable conclusion.
 Structure first, semantics when blocked.
 ```
+
+## Instructions
+
+### Step 1: Confirm the required environment
+
+Before analyzing a project, confirm the inputs and runtime needed for that file type:
+- For any project, `python3` and the CLI script must be available
+- For KiCad projects, `kicad-cli` must be available on `PATH`
+- For Cadence projects, require `pstxnet.dat`, `pstxprt.dat`, and the OrCAD Capture XML export together
+- For datasheet-dependent questions, require the relevant datasheet PDF or escalate to `ee-datasheet-master`
+
+If a required dependency or input is missing:
+- Stop before claiming the skill is usable for this task
+- State exactly what is missing
+- Tell the user the skill may be installed, but the current task is blocked until that requirement is provided
+
+### Step 2: Choose the entry mode
+
+Choose mode first, then query only what is needed for a reliable conclusion:
+- Architecture or review tasks: start with `overview`
+- Targeted component or net questions: start with direct `query`
+- Pattern searches: use `query --pattern <yaml_file>`
+
+### Step 3: Escalate only when structure is insufficient
+
+Use this escalation order:
+1. Structural evidence from the schematic
+2. `pcbparts` MCP for part identity or package/spec clues
+3. `ee-datasheet-master` for pin functions or electrical behavior
+4. Re-ground the conclusion back to the schematic evidence
 
 ### Iron Rule
 
@@ -217,6 +242,38 @@ Use when: MCP has no data and you need pin functions, electrical specs, or devic
 3. **Never guess datasheet content** — do not rely on prior knowledge or assume specifications
 
 **Escalation order**: Structural evidence → pcbparts MCP → ee-datasheet-master → re-ground to schematic.
+
+---
+
+## Troubleshooting
+
+Error: `No module named 'yaml'` or another Python import failure
+Cause: Python dependencies are missing.
+Solution: Run `pip install -r scripts/requirements.txt` before continuing.
+
+Error: `kicad-cli: command not found`
+Cause: KiCad CLI is required for KiCad netlist export but is not installed or not on `PATH`.
+Solution: Install KiCad, ensure `kicad-cli` is on `PATH`, and do not continue KiCad analysis until this is fixed.
+
+Error: KiCad project opens but connectivity is incomplete
+Cause: Netlist export failed, project path is wrong, or the project is only partially available.
+Solution: Verify the project root path, rerun `overview`, and in hierarchical designs confirm the correct root schematic was selected.
+
+Error: Cadence query lacks pages or component metadata
+Cause: Allegro netlist files and OrCAD XML are both required; one side is missing.
+Solution: Require `pstxnet.dat`, `pstxprt.dat`, and the Capture XML export together. If any one is missing, state that the project is only partially analyzable.
+
+Error: MCP lookup is unavailable
+Cause: `pcbparts` MCP is optional and not configured.
+Solution: Continue with structure-only analysis when possible, but state that part/spec lookup is limited without MCP.
+
+Error: The question depends on a datasheet, but no datasheet is available
+Cause: Structural evidence identifies the device but not the required pin function or electrical spec.
+Solution: Ask for the datasheet PDF or invoke `ee-datasheet-master` if the PDF is available. Do not answer from prior knowledge.
+
+Error: Query result is ambiguous
+Cause: Multiple refs or nets match, or the evidence is incomplete.
+Solution: Return the competing candidates, state what extra query would disambiguate the answer, and prefer `Unknown` over a confident guess.
 
 ---
 

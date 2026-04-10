@@ -1,9 +1,28 @@
 ---
 name: ee-datasheet-master
 description: "Use when user has/is reading a component datasheet or spec sheet to find chip parameters: pinout, voltage, I2C address, timing, register map, electrical characteristics. Trigger on PDF+chip questions. Also: 规格书, 数据手册, 芯片参数. All IC types."
+compatibility: Requires python3 and the Python packages listed in scripts/requirements.txt.
 ---
 
 # EE Datasheet Master
+
+## Instructions
+
+### Step 1: Confirm the required inputs and environment
+
+Before using `scripts/pdf_tools.py`:
+- Require a valid PDF path
+- Require `python3`
+- Require the Python packages used by `scripts/pdf_tools.py`
+
+If a required dependency or input is missing:
+- Stop before claiming the skill is usable for this task
+- State exactly what is missing
+- Tell the user the skill may be installed, but the current task is blocked until that requirement is provided
+
+### Step 2: Follow the PDF-only extraction rule
+
+All factual output must come from the PDF itself. If the PDF cannot provide the answer, return `NOT SPECIFIED IN DATASHEET` and explain the most direct way to obtain that information.
 
 ## Iron Law: PDF Content Only
 
@@ -183,6 +202,30 @@ For the complete device-type → key specs lookup table and per-device extractio
 | I2C address wrong | "0x18" | Show calculation from format |
 | Missing source | "SNR: 93 dB" | "SNR: 93 dB (Page 8, Typ)" |
 | Hallucinated specs | Any value without source | Always cite page and table |
+
+---
+
+## Troubleshooting
+
+Error: `ModuleNotFoundError: fitz` or `No module named 'pdfplumber'`
+Cause: Python dependencies are not installed.
+Solution: Run `pip install -r scripts/requirements.txt` before continuing.
+
+Error: `File not found` or the PDF path does not exist
+Cause: The PDF was not provided or the path is wrong.
+Solution: Ask the user for the exact PDF path. Do not answer from memory or general web knowledge.
+
+Error: `is_text_based: false` or extracted text is mostly garbage
+Cause: The PDF is image-based or uses difficult font encoding.
+Solution: Use `render_page`, read visually, and lower confidence. If manufacturer or part number cannot be confirmed from the rendered page, return `UNABLE TO VERIFY`.
+
+Error: The requested parameter is not in the datasheet
+Cause: The value is genuinely absent from this document, or the wrong document was provided.
+Solution: Return `NOT SPECIFIED IN DATASHEET` and follow it with the most direct acquisition path.
+
+Error: Tool commands keep failing
+Cause: Broken Python environment, unsupported PDF edge case, or damaged file.
+Solution: Report the failing command and classify the issue as dependency, file integrity, or extraction quality. Do not present guesses as extracted facts.
 
 ---
 
