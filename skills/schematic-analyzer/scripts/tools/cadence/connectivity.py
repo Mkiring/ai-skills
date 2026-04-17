@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from ..connectivity_builder import ConnectivityGraph, NetConnection
-from ..kicad.netlist_parser import NetlistComponent, NetlistNet
+from ..constants import DEFAULT_NET_TYPE
 from ..project_indexer import ProjectIndex
 from .netlist_dat_parser import find_netlist_dir, build_pin_net_map_from_dat, parse_pstxprt
 from .xml_parser import CadenceXMLParser
@@ -38,25 +38,29 @@ class CadenceConnectivityBuilder:
         return net_pins
 
     @staticmethod
-    def _get_pin_net_map(root_path: Path) -> tuple[dict[str, dict[str, str]], str, CadenceXMLParser]:
+    def _get_pin_net_map(root_path: Path) -> tuple[dict[str, dict[str, str]], str, Optional[CadenceXMLParser], Optional[Path]]:
         """Get pin-net map, preferring .dat files over XML coordinate matching.
 
         Returns:
-            (pin_net_map, source_label, parser)
+            (pin_net_map, source_label, parser_or_none, netlist_dir_or_none)
         """
-        parser = CadenceXMLParser(str(root_path))
-
-        # Try authoritative .dat source first
-        # If root_path is a file (e.g., XML schematic), use its parent directory
+        # Try authoritative .dat source first — no XML needed for this path
         search_path = root_path.parent if root_path.is_file() else root_path
         netlist_dir = find_netlist_dir(search_path)
         if netlist_dir is not None:
             dat_map = build_pin_net_map_from_dat(netlist_dir)
             if dat_map:
-                return dat_map, "pstxnet.dat", parser
+                # Create parser only if needed later (lazy)
+                parser = None
+                try:
+                    parser = CadenceXMLParser(str(root_path))
+                except (FileNotFoundError, ValueError):
+                    pass
+                return dat_map, "pstxnet.dat", parser, netlist_dir
 
-        # Fall back to XML coordinate matching
-        return parser.get_pin_net_map(), "xml_coordinate", parser
+        # Fall back to XML coordinate matching — XML is required here
+        parser = CadenceXMLParser(str(root_path))
+        return parser.get_pin_net_map(), "xml_coordinate", parser, None
 
     def build(self, project_index: ProjectIndex, root_schematic: str | Path) -> ConnectivityGraph:
         """Build connectivity from Cadence data.
@@ -65,18 +69,14 @@ class CadenceConnectivityBuilder:
         falls back to XML coordinate matching otherwise.
         """
         root_path = Path(root_schematic).resolve()
-        pin_net_map, source, parser = self._get_pin_net_map(root_path)
+        pin_net_map, source, parser, netlist_dir = self._get_pin_net_map(root_path)
 
         # Try to load page information from pstxprt.dat
         page_info: dict[str, dict] = {}
-        if source == "pstxnet.dat":
-            # pstxprt.dat is in the same directory as pstxnet.dat
-            search_path = root_path.parent if root_path.is_file() else root_path
-            netlist_dir = find_netlist_dir(search_path)
-            if netlist_dir:
-                pstxprt_file = netlist_dir / "pstxprt.dat"
-                if pstxprt_file.exists():
-                    page_info = parse_pstxprt(pstxprt_file)
+        if source == "pstxnet.dat" and netlist_dir is not None:
+            pstxprt_file = netlist_dir / "pstxprt.dat"
+            if pstxprt_file.exists():
+                page_info = parse_pstxprt(pstxprt_file)
 
         all_nets_data: dict[str, NetConnection] = {}
         component_nets: dict[str, dict] = {}
@@ -84,11 +84,12 @@ class CadenceConnectivityBuilder:
         if source == "xml_coordinate":
             warnings.append("Using XML coordinate matching (no pstxnet.dat found). "
                           "For higher accuracy, export Allegro netlist.")
-            # Add warning for unmatched pins
-            unmatched_count = parser.get_unmatched_pin_count()
-            if unmatched_count > 0:
-                warnings.append(f"XML coordinate matching: {unmatched_count} pins could not be matched to nets. "
-                              "This may indicate coordinate misalignment or incomplete wiring.")
+            # Add warning for unmatched pins (parser guaranteed non-None for xml_coordinate)
+            if parser is not None:
+                unmatched_count = parser.get_unmatched_pin_count()
+                if unmatched_count > 0:
+                    warnings.append(f"XML coordinate matching: {unmatched_count} pins could not be matched to nets. "
+                                  "This may indicate coordinate misalignment or incomplete wiring.")
 
         # Build component_nets from pin-net map
         for ref, pin_nets in pin_net_map.items():
@@ -100,7 +101,7 @@ class CadenceConnectivityBuilder:
 
             component_nets[ref] = {
                 "pins": dict(pin_nets),
-                "net_count": len(set(pin_nets.values())),
+                "pin_count": len(pin_nets),
                 "reference": ref,
                 "sheet_path": sheet_path,
                 "dat_source": source == "pstxnet.dat",
@@ -117,7 +118,7 @@ class CadenceConnectivityBuilder:
             all_nets_data[net_name] = NetConnection(
                 net_name=net_name,
                 net_code=code,
-                net_type="Unclassified",
+                net_type=DEFAULT_NET_TYPE,
                 connected_refs=connected_refs,
                 connected_pins=connected_pins_list,
             )
@@ -130,49 +131,3 @@ class CadenceConnectivityBuilder:
             component_nets=component_nets,
             warnings=warnings,
         )
-
-    def parse_file_compat(self, root_schematic: str | Path) -> dict[str, Any]:
-        """Return a dict compatible with NetlistParser._parse_file() output.
-
-        This enables ConnectivityBuilder.build() to use Cadence data with
-        minimal code changes.
-        """
-        root_path = Path(root_schematic).resolve()
-        pin_net_map, source, parser = self._get_pin_net_map(root_path)
-        components_dict: dict[str, NetlistComponent] = {}
-        nets_dict: dict[str, NetlistNet] = {}
-
-        # Build NetlistComponent objects
-        for comp in parser.get_components():
-            ref = comp.reference.upper()
-            lib_id = comp.library_id or ""
-            pin_nets = pin_net_map.get(ref, {})
-
-            components_dict[ref] = NetlistComponent(
-                reference=ref,
-                value=comp.value,
-                library=lib_id,
-                sheet_instance_path="/",
-                footprint=comp.footprint,
-                pins=dict(pin_nets),
-                units=[],
-            )
-
-        # Build NetlistNet objects
-        net_pins = self._aggregate_net_pins(pin_net_map)
-
-        code = 0
-        for net_name, pins in net_pins.items():
-            nets_dict[net_name] = NetlistNet(
-                name=net_name,
-                code=code,
-                pins=pins,
-            )
-            code += 1
-
-        return {
-            "components": components_dict,
-            "nets": nets_dict,
-            "ref_to_instances": {ref: [ref] for ref in sorted(components_dict)},
-            "warnings": [],
-        }

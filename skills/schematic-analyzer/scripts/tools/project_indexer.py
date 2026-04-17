@@ -118,7 +118,10 @@ class ProjectIndexer:
 
         for record in self._build_sheet_records(scope):
             parser = get_schematic_parser(str(record.file_path), include_child_sheets=False)
-            local_components = parser.get_components()
+            try:
+                local_components = parser.get_components(include_dnp=False)
+            except TypeError:
+                local_components = parser.get_components()
             hierarchy.append(
                 SheetInfo(
                     sheet_name=record.sheet_name,
@@ -169,14 +172,14 @@ class ProjectIndexer:
         return ProjectIndex(
             scope=scope,
             components=components,
-            nets={},
+            nets={},  # TODO: populate from ConnectivityBuilder when integrated
             hierarchy=hierarchy,
             resolver=InstanceResolver({ref: [ref] for ref in sorted(components)}),
             sheet_name_to_path=sheet_name_to_path,
             statistics=IndexStatistics(
                 total_components=len(components),
                 total_sheets=len(hierarchy),
-                duplicate_reference_count=0,
+                duplicate_reference_count=0,  # TODO: compute from actual instance resolution
             ),
         )
 
@@ -195,6 +198,7 @@ class ProjectIndexer:
         pstxprt.dat is unavailable.
         """
         from .cadence.netlist_dat_parser import find_netlist_dir, parse_pstxprt
+        from .parser_factory import get_schematic_parser
 
         netlist_dir = find_netlist_dir(scope.root_schematic)
         if netlist_dir is None:
@@ -226,21 +230,36 @@ class ProjectIndexer:
 
         sorted_pages = sorted(page_refs.keys(), key=_page_sort_key)
 
+        # Build pageN → human-readable page name mapping from XML parser
+        page_display_names: dict[str, str] = {}
+        try:
+            xml_parser = get_schematic_parser(str(scope.root_schematic), include_child_sheets=False)
+            xml_page_names = xml_parser.get_page_names()
+            for raw_page in page_refs:
+                m = _re.search(r"\d+", raw_page)
+                if m:
+                    page_idx = int(m.group()) - 1  # page3 → index 2
+                    if 0 <= page_idx < len(xml_page_names):
+                        page_display_names[raw_page] = xml_page_names[page_idx]
+        except Exception:
+            pass
+
         # Build new hierarchy
         new_hierarchy: list[SheetInfo] = []
         new_sheet_name_to_path: dict[str, str] = {}
         for page_name in sorted_pages:
+            display_name = page_display_names.get(page_name, page_name)
             sheet_path = f"/{page_name}"
             new_hierarchy.append(
                 SheetInfo(
-                    sheet_name=page_name,
+                    sheet_name=display_name,
                     sheet_file=scope.root_schematic.name,
                     sheet_path=sheet_path,
                     sheet_type="hierarchy",
                     component_count=len(page_refs[page_name]),
                 )
             )
-            new_sheet_name_to_path[page_name] = sheet_path
+            new_sheet_name_to_path[display_name] = sheet_path
 
         # Reassign component sheet_paths (frozen dataclass — recreate)
         new_components: dict[str, ComponentInstance] = {}

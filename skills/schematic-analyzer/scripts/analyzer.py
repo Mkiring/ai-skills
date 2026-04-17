@@ -610,14 +610,18 @@ class SchematicAnalyzer:
         if not include_full:
             nets = self._merge_multipad_pins(nets)
 
-        return {
+        # Merge same-net entries into one (e.g. GND pins "2,3,6,7")
+        nets = self._merge_same_net_pins(nets)
+        mpn = self._component_mpn(component)
+
+        payload = {
             "query_type": "component",
             "ref": component.reference,
             "value": component.value,
-            "mpn": self._component_mpn(component),
+            "mpn": mpn,
             "page_index": page_index,
             "page_name": self._sheet_name_from_path(sheet_path),
-            "properties": dict(component.properties),
+            "properties": self._dedup_properties(component, mpn),
             "nets": nets,
             "neighbors": self._build_neighbors_payload(
                 ref,
@@ -625,6 +629,7 @@ class SchematicAnalyzer:
                 sheet_path,
             ),
         }
+        return payload
 
     def query_component_match(self, text: str, *, include_all: bool = False) -> dict[str, Any]:
         """Search components by text (supports regex)."""
@@ -652,13 +657,14 @@ class SchematicAnalyzer:
             else:
                 if wanted not in haystack.lower():
                     continue
-            matches.append(
-                {
-                    "ref": component.reference,
-                    "value": component.value,
-                    "mpn": self._component_mpn(component),
-                }
-            )
+            mpn = self._component_mpn(component)
+            match_entry = {
+                "ref": component.reference,
+                "value": component.value,
+            }
+            if mpn:
+                match_entry["mpn"] = mpn
+            matches.append(match_entry)
         shown, truncated = self._truncate_items(matches, include_all=include_all)
         return {
             "query_type": "component",
@@ -910,6 +916,7 @@ class SchematicAnalyzer:
                 }
             )
 
+        net_names_in_graph: set[str] = set(graph.all_nets.keys())
         entity_buckets: dict[tuple[str, str], dict[str, Any]] = {}
         for schematic_file in self._get_analysis_schematic_paths():
             parser = self._get_local_parser(schematic_file)
@@ -920,6 +927,10 @@ class SchematicAnalyzer:
                     continue
                 entity_name = str(entity.get("name", "")).strip()
                 if not entity_name:
+                    continue
+                # Skip label entities whose name already exists as a net —
+                # the net entry already carries complete pin/page information.
+                if entity_name in net_names_in_graph:
                     continue
                 key = (entity_name, kind)
                 bucket = entity_buckets.setdefault(
@@ -1047,11 +1058,14 @@ class SchematicAnalyzer:
         }
 
     def _component_summary(self, component) -> dict[str, Any]:
-        return {
+        entry = {
             "ref": component.reference,
             "value": component.value,
-            "mpn": self._component_mpn(component),
         }
+        mpn = self._component_mpn(component)
+        if mpn:
+            entry["mpn"] = mpn
+        return entry
 
     def _component_mpn(self, component) -> str | None:
         properties = getattr(component, "properties", {}) or {}
@@ -1063,6 +1077,17 @@ class SchematicAnalyzer:
         if value:
             return str(value)
         return None
+
+    def _dedup_properties(self, component, top_mpn: str | None) -> dict[str, Any]:
+        """Remove redundant MPN fields from properties that duplicate top-level mpn or value."""
+        props = dict(getattr(component, "properties", {}) or {})
+        if not top_mpn:
+            return props
+        # Remove MPN/Manufacturer Part Number from properties if it matches top-level mpn
+        for key in ("MPN", "Manufacturer Part Number"):
+            if key in props and str(props[key]) == top_mpn:
+                del props[key]
+        return props
 
     def _truncate_items(self, items: list[dict[str, Any]], *, include_all: bool) -> tuple[list[dict[str, Any]], bool]:
         if include_all or len(items) <= self.DEFAULT_QUERY_LIMIT:
@@ -1199,6 +1224,29 @@ class SchematicAnalyzer:
                 merged.append({"name": net_name, "pin": f"{base_names.pop()} ×{len(entries)}"})
             else:
                 merged.extend(entries)
+        return merged
+
+    @staticmethod
+    def _merge_same_net_pins(nets: list[dict[str, str]]) -> list[dict[str, str]]:
+        """Merge entries sharing the same net name into one with comma-separated pins."""
+        if not nets:
+            return nets
+        merged: list[dict[str, str]] = []
+        groups: dict[str, list[dict[str, str]]] = {}
+        order: list[str] = []
+        for entry in nets:
+            name = entry["name"]
+            if name not in groups:
+                groups[name] = []
+                order.append(name)
+            groups[name].append(entry)
+        for name in order:
+            entries = groups[name]
+            if len(entries) == 1:
+                merged.append(entries[0])
+            else:
+                pins = ",".join(e["pin"] for e in entries)
+                merged.append({"name": name, "pin": pins})
         return merged
 
     def _pin_name(self, component, pin_number: str, dat_source: bool = False) -> str:
