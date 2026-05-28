@@ -1169,19 +1169,18 @@ class SchematicAnalyzer:
                     other_ref
                     for other_ref, entry in component_nets.items()
                     if net_name in {str(value) for value in entry.get("pins", {}).values() if str(value)}
+                    and other_ref in self.project_index.components
                 }
             )
             peer_refs = [other_ref for other_ref in connected_refs if other_ref != reference]
             pages = {
                 self.project_index.components[other_ref].sheet_path
                 for other_ref in connected_refs
-                if other_ref in self.project_index.components
             }
             local_connected_refs = [
                 other_ref
                 for other_ref in peer_refs
-                if self.project_index.components.get(other_ref) is not None
-                and self.project_index.components[other_ref].sheet_path == component_sheet_path
+                if self.project_index.components[other_ref].sheet_path == component_sheet_path
             ]
             entry: dict[str, Any] = {
                 "net": net_name,

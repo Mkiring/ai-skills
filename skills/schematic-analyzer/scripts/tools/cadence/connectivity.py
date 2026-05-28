@@ -101,7 +101,7 @@ class CadenceConnectivityBuilder:
             # Use page from pstxprt.dat if available, otherwise use XML's sheet_path
             sheet_path = comp.sheet_path if comp else "/"
             if ref in page_info:
-                sheet_path = page_info[ref]["page"]
+                sheet_path = f"/{page_info[ref]['page']}"
 
             # Resolve physical pin numbers from pstchip.dat via PART_NAME
             comp_pin_map: dict[str, str] = {}
